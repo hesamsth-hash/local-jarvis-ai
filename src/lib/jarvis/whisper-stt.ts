@@ -1,6 +1,6 @@
-// Whisper STT engine — speech recognition running locally via transformers.js WASM.
+// Whisper STT engine — speech recognition running locally via transformers.js.
+// The library and model are lazy-loaded on demand.
 
-import { pipeline } from "@huggingface/transformers";
 import type { AutomaticSpeechRecognitionPipeline } from "@huggingface/transformers";
 import type { LoadedProgress } from "./types";
 
@@ -21,23 +21,22 @@ class SttEngine {
   ): Promise<AutomaticSpeechRecognitionPipeline> {
     if (this.asr) return Promise.resolve(this.asr);
     if (this.loading) return this.loading;
-    this.loading = pipeline(
-      "automatic-speech-recognition",
-      MODEL_ID,
-      {
-        dtype: { encoder_model: "q8", decoder_model_merged: "q8" },
-        device: "wasm",
-        progress_callback: (p: {
-          status?: string;
-          file?: string;
-          progress?: number;
-        }) => {
-          if (p.status === "progress" && p.file) {
-            onProgress?.({ file: p.file, progress: p.progress ?? 0 });
-          }
-        },
-      },
-    )
+    this.loading = import("@huggingface/transformers")
+      .then(({ pipeline }) =>
+        pipeline("automatic-speech-recognition", MODEL_ID, {
+          dtype: { encoder_model: "q8", decoder_model_merged: "q8" },
+          device: "wasm",
+          progress_callback: (p: {
+            status?: string;
+            file?: string;
+            progress?: number;
+          }) => {
+            if (p.status === "progress" && p.file) {
+              onProgress?.({ file: p.file, progress: p.progress ?? 0 });
+            }
+          },
+        }),
+      )
       .then((p) => {
         this.asr = p;
         onDone?.();

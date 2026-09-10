@@ -63,7 +63,7 @@ export function useJarvis() {
       id: "welcome",
       role: "jarvis",
       content:
-        'JARVIS online. Everything here runs on your device — no cloud, no API keys. Say "connect folder" to give me local file access, or "help" to see my skills.',
+        'JARVIS online. Everything here runs on your device — no cloud, no API keys. First click “Download engines” in the Voice tab to fetch the voice + speech models (~40 MB, cached after that). Then say “connect folder” for local file access, or “help” to see my skills.',
       createdAt: Date.now(),
     },
   ]);
@@ -115,11 +115,6 @@ export function useJarvis() {
       )
       .catch(() => undefined);
   }, []);
-
-  // Auto-load on mount (first user gesture may be needed for audio playback).
-  useEffect(() => {
-    loadEngines();
-  }, [loadEngines]);
 
   // ---------- filesystem ----------
   const refreshFs = useCallback(async (path = "") => {

@@ -1,15 +1,20 @@
 // Kokoro TTS engine — 82M-param text-to-speech running 100% locally via WASM.
+// The library and model are lazy-loaded on demand (first "Download engines"
+// click or first command), keeping the app's first paint fast.
 
-import { KokoroTTS } from "kokoro-js";
 import type { LoadedProgress } from "./types";
+
+const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
+
+type KokoroInstance = Awaited<
+  ReturnType<typeof import("kokoro-js").KokoroTTS.from_pretrained>
+>;
 
 // Minimal structural type — kokoro-js bundles its own copy of transformers,
 // so we avoid cross-package nominal type mismatches.
 interface RawAudioLike {
   toBlob(): Blob;
 }
-
-const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 
 export interface VoiceOption {
   id: string;
@@ -31,8 +36,8 @@ export interface SpeakHandle {
 }
 
 class TtsEngine {
-  private tts: KokoroTTS | null = null;
-  private loading: Promise<KokoroTTS> | null = null;
+  private tts: KokoroInstance | null = null;
+  private loading: Promise<KokoroInstance> | null = null;
   private currentAudio: HTMLAudioElement | null = null;
   private currentUrl: string | null = null;
   onStateChange: ((speaking: boolean) => void) | null = null;
@@ -45,18 +50,25 @@ class TtsEngine {
     onProgress?: (p: LoadedProgress) => void,
     onDone?: () => void,
     onError?: (e: string) => void,
-  ): Promise<KokoroTTS> {
+  ): Promise<KokoroInstance> {
     if (this.tts) return Promise.resolve(this.tts);
     if (this.loading) return this.loading;
-    this.loading = KokoroTTS.from_pretrained(MODEL_ID, {
-      dtype: "q8",
-      device: "wasm",
-      progress_callback: (p: { status?: string; file?: string; progress?: number }) => {
-        if (p.status === "progress" && p.file) {
-          onProgress?.({ file: p.file, progress: p.progress ?? 0 });
-        }
-      },
-    })
+    this.loading = import("kokoro-js")
+      .then(({ KokoroTTS }) =>
+        KokoroTTS.from_pretrained(MODEL_ID, {
+          dtype: "q8",
+          device: "wasm",
+          progress_callback: (p: {
+            status?: string;
+            file?: string;
+            progress?: number;
+          }) => {
+            if (p.status === "progress" && p.file) {
+              onProgress?.({ file: p.file, progress: p.progress ?? 0 });
+            }
+          },
+        }),
+      )
       .then((t) => {
         this.tts = t;
         onDone?.();

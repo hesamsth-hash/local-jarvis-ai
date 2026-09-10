@@ -198,7 +198,7 @@ export default function Dashboard() {
                 onVoiceChange={jarvis.setVoice}
                 onSpeedChange={jarvis.setSpeed}
                 onAutoSpeakChange={jarvis.setAutoSpeak}
-                onRetry={jarvis.loadEngines}
+                onDownload={jarvis.loadEngines}
               />
             </TabsContent>
             <TabsContent value="files" className="h-[420px] px-0 pb-3">

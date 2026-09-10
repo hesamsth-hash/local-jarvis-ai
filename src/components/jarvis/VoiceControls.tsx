@@ -1,4 +1,4 @@
-import { Activity, Mic, Volume2 } from "lucide-react";
+import { Activity, Download, Mic, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -21,7 +21,7 @@ interface VoiceControlsProps {
   onVoiceChange: (v: string) => void;
   onSpeedChange: (v: number) => void;
   onAutoSpeakChange: (v: boolean) => void;
-  onRetry: () => void;
+  onDownload: () => void;
 }
 
 function EngineRow({
@@ -75,8 +75,11 @@ export function VoiceControls({
   onVoiceChange,
   onSpeedChange,
   onAutoSpeakChange,
-  onRetry,
+  onDownload,
 }: VoiceControlsProps) {
+  const anyLoading = engines.tts === "loading" || engines.stt === "loading";
+  const bothReady = engines.tts === "ready" && engines.stt === "ready";
+
   return (
     <div className="space-y-4 p-4">
       <div className="space-y-2.5">
@@ -96,22 +99,53 @@ export function VoiceControls({
         />
       </div>
 
-      {(engines.tts === "loading" || engines.stt === "loading") && engines.progress && (
-        <div className="space-y-1.5">
-          <div className="flex justify-between font-mono text-[10px] text-muted-foreground">
-            <span className="max-w-[70%] truncate">{engines.progress.file}</span>
-            <span>{Math.round(engines.progress.progress)}%</span>
-          </div>
-          <Progress value={engines.progress.progress} className="h-1.5" />
-        </div>
-      )}
-
-      {engines.error && (
-        <div className="space-y-2 rounded-lg bg-destructive/10 p-3 ring-1 ring-destructive/20">
-          <p className="text-xs text-destructive">{engines.error}</p>
-          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={onRetry}>
-            Retry download
-          </Button>
+      {!bothReady && (
+        <div className="rounded-xl bg-primary/5 p-3 ring-1 ring-primary/20">
+          {anyLoading ? (
+            <>
+              {engines.progress && (
+                <div className="space-y-1.5">
+                  <div className="flex justify-between font-mono text-[10px] text-muted-foreground">
+                    <span className="max-w-[70%] truncate">
+                      {engines.progress.file}
+                    </span>
+                    <span>{Math.round(engines.progress.progress)}%</span>
+                  </div>
+                  <Progress
+                    value={engines.progress.progress}
+                    className="h-1.5"
+                  />
+                </div>
+              )}
+              <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+                Downloading the neural models (~40 MB, one time). They're cached
+                in your browser and run on this device afterwards.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-xs font-medium">
+                One-time setup: download the local engines
+              </p>
+              <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                Kokoro (voice) + Whisper (ears), ~40 MB total. Stored in your
+                browser — no cloud is used at runtime.
+              </p>
+              <Button
+                size="sm"
+                className="mt-2.5 w-full gap-2"
+                onClick={onDownload}
+              >
+                <Download className="size-3.5" />
+                Download engines
+              </Button>
+              {engines.error && (
+                <p className="mt-2 text-[11px] text-destructive">
+                  {engines.error}
+                </p>
+              )}
+            </>
+          )}
         </div>
       )}
 
