@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import {
   ArrowRight,
+  Brain,
   Cpu,
   FolderTree,
   Github,
@@ -28,6 +29,12 @@ const FEATURES = [
     chip: "kokoro-js",
   },
   {
+    icon: Brain,
+    title: "Bring your own local LLM",
+    body: "Plug in Ollama, KoboldCpp, LM Studio or llama.cpp. Your model becomes the brain and plans tool calls — weights stay on your machine.",
+    chip: "ollama · kobold · lm studio",
+  },
+  {
     icon: Mic,
     title: "Whisper speech input",
     body: "Talk to your assistant hands-free. Whisper runs locally and turns speech into commands in seconds.",
@@ -41,9 +48,15 @@ const FEATURES = [
   },
   {
     icon: Puzzle,
-    title: "A plugin bay, not a black box",
-    body: "Every capability is a visible, toggleable plugin. Disable what you don't trust and the local router simply stops using it.",
-    chip: "local router",
+    title: "Twenty tools, one registry",
+    body: "Web search, weather, YouTube, system monitor, screen & camera capture, code review, reminders, monitors — all visible and toggleable.",
+    chip: "tool registry",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Honest about limits",
+    body: "A browser can't move your mouse or change system volume. JARVIS tells you exactly what needs a native bridge instead of faking it.",
+    chip: "no smoke & mirrors",
   },
 ];
 
@@ -122,8 +135,9 @@ export default function Landing() {
           className="mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg"
         >
           A voice-first assistant with a local brain: Kokoro speaks, Whisper
-          listens, and a deterministic intent engine drives real filesystem
-          tools — copy, rename, delete and more — right inside your browser.
+          listens, and your own Ollama or KoboldCpp model plans real tools —
+          file operations, web search, weather, screen capture and more — right
+          inside your browser.
         </motion.p>
 
         <motion.div
@@ -289,7 +303,7 @@ export default function Landing() {
               </a>
             </Button>
             <p className="mt-4 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-              kokoro tts · whisper stt · fs tools · plugin bay
+              kokoro tts · whisper stt · ollama brain · 20 tools · plugin bay
             </p>
           </div>
         </motion.div>

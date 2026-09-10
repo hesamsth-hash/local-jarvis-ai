@@ -1,9 +1,11 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AudioLines,
+  BrainCircuit,
   Cpu,
   FolderOpen,
   History,
+  Puzzle,
   Send,
   Square,
   Volume2,
@@ -18,6 +20,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { ChatPanel } from "@/components/jarvis/ChatPanel";
 import { FileDeck } from "@/components/jarvis/FileDeck";
 import { JarvisOrb } from "@/components/jarvis/JarvisOrb";
+import { MediaViewer } from "@/components/jarvis/MediaViewer";
+import { ModelSettings } from "@/components/jarvis/ModelSettings";
 import { PluginBay } from "@/components/jarvis/PluginBay";
 import { SystemStrip } from "@/components/jarvis/SystemStrip";
 import { VoiceControls } from "@/components/jarvis/VoiceControls";
@@ -31,9 +35,7 @@ export default function Dashboard() {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    el.focus();
+    inputRef.current?.focus();
   }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -65,6 +67,20 @@ export default function Dashboard() {
                 local console
               </p>
             </div>
+            {/* brain status chip */}
+            <span
+              className={cn(
+                "ml-2 hidden items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[10px] uppercase ring-1 sm:flex",
+                jarvis.llmStatus === "online" && jarvis.llm.enabled
+                  ? "bg-emerald-500/10 text-emerald-600 ring-emerald-500/25 dark:text-emerald-400"
+                  : "bg-muted text-muted-foreground ring-border",
+              )}
+            >
+              <BrainCircuit className="size-3" />
+              {jarvis.llmStatus === "online" && jarvis.llm.enabled
+                ? jarvis.llm.model || "llm online"
+                : "offline brain"}
+            </span>
           </div>
           <div className="flex items-center gap-2">
             {user?.name || user?.email ? (
@@ -85,8 +101,8 @@ export default function Dashboard() {
       </header>
 
       {/* Main grid */}
-      <main className="relative z-10 mx-auto grid w-full max-w-7xl flex-1 gap-4 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-        {/* Left column: orb + chat */}
+      <main className="relative z-10 mx-auto grid w-full max-w-7xl flex-1 gap-4 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_380px]">
+        {/* Left column */}
         <section className="flex min-w-0 flex-col gap-4">
           <div className="glass-panel soft-card flex flex-col items-center gap-4 rounded-2xl px-4 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-8">
             <div className="flex flex-col gap-1 text-center sm:items-start sm:text-left">
@@ -94,8 +110,7 @@ export default function Dashboard() {
                 Good {greeting()}, {user?.name?.split(" ")[0] ?? "Sir"}
               </h1>
               <p className="max-w-md text-sm text-muted-foreground">
-                Your offline assistant is standing by. Voice, brain, and file
-                tools all run on this device.
+                Voice, brain, and tools — all running on this device.
               </p>
               <SystemStrip
                 className="mt-2 justify-center sm:justify-start"
@@ -117,7 +132,6 @@ export default function Dashboard() {
           <div className="soft-card flex min-h-[380px] flex-1 flex-col overflow-hidden rounded-2xl">
             <ChatPanel messages={jarvis.messages} busy={jarvis.busy} />
 
-            {/* Input bar */}
             <div className="border-t border-border/70 p-3 sm:p-4">
               <div className="flex items-end gap-2">
                 <Textarea
@@ -125,7 +139,7 @@ export default function Dashboard() {
                   value={jarvis.input}
                   onChange={(e) => jarvis.setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder='Type a command — "list files", "read notes.txt", "say hello"…'
+                  placeholder='Type a command — "weather in Berlin", "search fusion energy", "remind me in 20 minutes to stretch"…'
                   className="min-h-11 flex-1 resize-none rounded-xl text-sm"
                   rows={1}
                   disabled={jarvis.busy}
@@ -158,7 +172,13 @@ export default function Dashboard() {
                 </Button>
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                {["list files", "help", "say hello", "status"].map((s) => (
+                {[
+                  "weather in Tokyo",
+                  "search fusion energy",
+                  "screen",
+                  "remind me in 10 minutes to stretch",
+                  "list files",
+                ].map((s) => (
                   <button
                     key={s}
                     onClick={() => void jarvis.process(s, "text")}
@@ -172,21 +192,25 @@ export default function Dashboard() {
           </div>
         </section>
 
-        {/* Right column: panels */}
+        {/* Right column */}
         <aside className="flex min-w-0 flex-col gap-4">
           <Tabs defaultValue="voice" className="soft-card rounded-2xl">
-            <TabsList className="mx-3 mt-3 grid w-auto grid-cols-3">
-              <TabsTrigger value="voice" className="gap-1 text-xs">
+            <TabsList className="mx-3 mt-3 grid h-auto w-auto grid-cols-4">
+              <TabsTrigger value="voice" className="gap-1 px-2 text-xs">
                 <Volume2 className="size-3.5" />
                 Voice
               </TabsTrigger>
-              <TabsTrigger value="files" className="gap-1 text-xs">
+              <TabsTrigger value="brain" className="gap-1 px-2 text-xs">
+                <BrainCircuit className="size-3.5" />
+                Brain
+              </TabsTrigger>
+              <TabsTrigger value="tools" className="gap-1 px-2 text-xs">
+                <Puzzle className="size-3.5" />
+                Tools
+              </TabsTrigger>
+              <TabsTrigger value="files" className="gap-1 px-2 text-xs">
                 <FolderOpen className="size-3.5" />
                 Files
-              </TabsTrigger>
-              <TabsTrigger value="plugins" className="gap-1 text-xs">
-                <Cpu className="size-3.5" />
-                Plugins
               </TabsTrigger>
             </TabsList>
             <TabsContent value="voice" className="px-0 pb-3">
@@ -201,6 +225,21 @@ export default function Dashboard() {
                 onDownload={jarvis.loadEngines}
               />
             </TabsContent>
+            <TabsContent value="brain" className="px-0 pb-3">
+              <ModelSettings
+                config={jarvis.llm}
+                status={jarvis.llmStatus}
+                models={jarvis.models}
+                onChange={jarvis.setLlm}
+                onTest={() => void jarvis.handleTestLlm()}
+              />
+            </TabsContent>
+            <TabsContent value="tools" className="max-h-[520px] overflow-y-auto px-0 pb-3">
+              <PluginBay
+                disabledTools={jarvis.disabledTools}
+                onToggleTool={jarvis.toggleTool}
+              />
+            </TabsContent>
             <TabsContent value="files" className="h-[420px] px-0 pb-3">
               <FileDeck
                 connected={jarvis.connected}
@@ -212,9 +251,6 @@ export default function Dashboard() {
                 onRefresh={() => void jarvis.refreshFs(jarvis.fsPath)}
                 onOpen={jarvis.openEntry}
               />
-            </TabsContent>
-            <TabsContent value="plugins" className="px-0 pb-3">
-              <PluginBay plugins={jarvis.plugins} onToggle={jarvis.togglePlugin} />
             </TabsContent>
           </Tabs>
 
@@ -260,6 +296,14 @@ export default function Dashboard() {
           </div>
         </aside>
       </main>
+
+      {/* Media viewer overlay */}
+      <MediaViewer
+        stream={jarvis.media?.stream ?? null}
+        kind={jarvis.media?.kind ?? null}
+        label={jarvis.media?.kind === "screen" ? "Screen share" : "Webcam"}
+        onClose={jarvis.closeMedia}
+      />
     </div>
   );
 }
