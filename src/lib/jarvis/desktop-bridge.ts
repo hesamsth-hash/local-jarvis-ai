@@ -6,44 +6,131 @@ interface TauriInvoke {
   (cmd: string, args?: Record<string, unknown>): Promise<unknown>;
 }
 
-function invokeOrNull(): TauriInvoke | null {
-  const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: TauriInvoke } };
-  return w.__TAURI_INTERNALS__?.invoke ?? null;
+interface TauriEvent {
+  listen: (event: string, handler: (e: { payload: unknown }) => void) => Promise<() => void>;
+}
+
+function tauri(): { invoke: TauriInvoke; event?: TauriEvent } | null {
+  const w = window as unknown as {
+    __TAURI_INTERNALS__?: { invoke: TauriInvoke; invokeHandshake?: unknown };
+    __TAURI__?: { event?: TauriEvent };
+  };
+  const internals = w.__TAURI_INTERNALS__;
+  if (!internals) return null;
+  return { invoke: internals.invoke, event: w.__TAURI__?.event };
 }
 
 export function isDesktop(): boolean {
-  return invokeOrNull() !== null;
+  return tauri() !== null;
 }
 
 export interface DesktopSystemInfo {
   os_name: string;
   os_version: string;
-  kernel: string;
   hostname: string;
   cpu_brand: string;
   cpu_cores: number;
   cpu_usage_percent: number;
   total_memory_gb: number;
   used_memory_gb: number;
-  gpu_names: string[];
+  gpus: string[];
   uptime_secs: number;
 }
 
 export async function desktopSystemInfo(): Promise<DesktopSystemInfo | null> {
-  const invoke = invokeOrNull();
-  if (!invoke) return null;
+  const t = tauri();
+  if (!t) return null;
   try {
-    return (await invoke("system_info")) as DesktopSystemInfo;
+    return (await t.invoke("system_info")) as DesktopSystemInfo;
   } catch {
     return null;
   }
 }
 
-export async function desktopLaunchApp(name: string): Promise<string | null> {
-  const invoke = invokeOrNull();
-  if (!invoke) return null;
+// ---------------- input ----------------
+
+export async function desktopMouseMove(
+  x: number,
+  y: number,
+  relative = false,
+): Promise<string | null> {
+  const t = tauri();
+  if (!t) return null;
   try {
-    const res = (await invoke("launch_app", { name })) as {
+    return (await t.invoke("mouse_move", { x, y, relative })) as string;
+  } catch (e) {
+    return e instanceof Error ? `Mouse move failed: ${e.message}` : "Mouse move failed.";
+  }
+}
+
+export async function desktopMouseClick(
+  button: "left" | "right" | "middle" = "left",
+  kind: "click" | "down" | "up" = "click",
+): Promise<string | null> {
+  const t = tauri();
+  if (!t) return null;
+  try {
+    return (await t.invoke("mouse_click", { button, kind })) as string;
+  } catch (e) {
+    return e instanceof Error ? `Click failed: ${e.message}` : "Click failed.";
+  }
+}
+
+export async function desktopMouseScroll(amount: number): Promise<string | null> {
+  const t = tauri();
+  if (!t) return null;
+  try {
+    return (await t.invoke("mouse_scroll", { amount })) as string;
+  } catch (e) {
+    return e instanceof Error ? `Scroll failed: ${e.message}` : "Scroll failed.";
+  }
+}
+
+export async function desktopKeyPress(key: string): Promise<string | null> {
+  const t = tauri();
+  if (!t) return null;
+  try {
+    return (await t.invoke("key_press", { key })) as string;
+  } catch (e) {
+    return e instanceof Error ? `Key failed: ${e.message}` : "Key failed.";
+  }
+}
+
+export async function desktopTypeText(text: string): Promise<string | null> {
+  const t = tauri();
+  if (!t) return null;
+  try {
+    return (await t.invoke("type_text", { text })) as string;
+  } catch (e) {
+    return e instanceof Error ? `Typing failed: ${e.message}` : "Typing failed.";
+  }
+}
+
+// ---------------- capture ----------------
+
+export interface DesktopScreenshot {
+  data_uri: string;
+  width: number;
+  height: number;
+}
+
+export async function desktopPicture(): Promise<DesktopScreenshot | null> {
+  const t = tauri();
+  if (!t) return null;
+  try {
+    return (await t.invoke("desktop_picture")) as DesktopScreenshot;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------- apps / urls / notifications ----------------
+
+export async function desktopLaunchApp(name: string): Promise<string | null> {
+  const t = tauri();
+  if (!t) return null;
+  try {
+    const res = (await t.invoke("launch_app", { name })) as {
       ok: boolean;
       message: string;
     };
@@ -54,10 +141,10 @@ export async function desktopLaunchApp(name: string): Promise<string | null> {
 }
 
 export async function desktopOpenUrl(url: string): Promise<string | null> {
-  const invoke = invokeOrNull();
-  if (!invoke) return null;
+  const t = tauri();
+  if (!t) return null;
   try {
-    const res = (await invoke("open_url", { url })) as {
+    const res = (await t.invoke("open_url", { url })) as {
       ok: boolean;
       message: string;
     };
@@ -67,13 +154,30 @@ export async function desktopOpenUrl(url: string): Promise<string | null> {
   }
 }
 
-export async function desktopStatus(): Promise<boolean> {
-  const invoke = invokeOrNull();
-  if (!invoke) return false;
+export async function desktopNotify(title: string, body: string): Promise<boolean> {
+  const t = tauri();
+  if (!t) return false;
   try {
-    const res = await invoke("desktop_status");
-    return res === "desktop-bridge-online";
+    await t.invoke("notify", { title, body });
+    return true;
   } catch {
     return false;
   }
+}
+
+// ---------------- live stats ----------------
+
+export function onDesktopStats(
+  handler: (info: DesktopSystemInfo) => void,
+): () => void {
+  const t = tauri();
+  const listen = t?.event?.listen;
+  if (!listen) return () => undefined;
+  let unlisten: (() => void) | null = null;
+  void listen("desktop-stats", (e) => handler(e.payload as DesktopSystemInfo)).then(
+    (un) => {
+      unlisten = un;
+    },
+  );
+  return () => unlisten?.();
 }

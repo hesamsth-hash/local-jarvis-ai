@@ -12,6 +12,7 @@ export interface ToolResult {
   ok: boolean;
   data: string; // human-readable result fed back to the user / LLM
   media?: MediaStream; // for screen / webcam capture
+  image?: string; // data-URI for desktop screenshots
 }
 
 export interface ToolContext {
@@ -201,7 +202,7 @@ export const TOOLS: JarvisTool[] = [
         const hours = Math.floor(mins / 60);
         return {
           ok: true,
-          data: `${info.hostname} · ${info.os_name} ${info.os_version} · CPU ${info.cpu_brand} (${info.cpu_cores} cores, ${info.cpu_usage_percent.toFixed(0)}% load) · RAM ${info.used_memory_gb.toFixed(1)}/${info.total_memory_gb.toFixed(1)} GB${info.gpu_names.length ? ` · GPU ${info.gpu_names.join(", ")}` : ""} · up ${hours}h ${mins % 60}m`,
+          data: `${info.hostname} · ${info.os_name} ${info.os_version} · CPU ${info.cpu_brand} (${info.cpu_cores} cores, ${info.cpu_usage_percent.toFixed(0)}% load) · RAM ${info.used_memory_gb.toFixed(1)}/${info.total_memory_gb.toFixed(1)} GB${info.gpus.length ? ` · GPU ${info.gpus.join(", ")}` : ""} · up ${hours}h ${mins % 60}m`,
         };
       }
       // Browser fallback: what a tab can see
@@ -273,22 +274,40 @@ export const TOOLS: JarvisTool[] = [
     name: "Computer Settings",
     category: "system",
     description:
-      "Volume, brightness, WiFi and power need OS access — opens the matching system panel instead.",
+      "Volume & brightness via real media keys on desktop; guidance in the browser.",
     llmDescription:
-      "adjust system settings — volume, brightness, wifi, power. NOTE: browsers cannot change these; the tool tells the user how to open the right settings panel",
+      'adjust system settings — actions: volume <up|down|mute>, brightness <up|down>, wifi, power',
     argHint: "volume|brightness|wifi|power",
-    handler: async (arg) => {
+    handler: async (arg, ctx) => {
       const a = arg.toLowerCase();
+      if (ctx.desktop) {
+        const { desktopKeyPress } = await import("./desktop-bridge");
+        if (a.includes("vol")) {
+          const key = a.includes("mute")
+            ? "volumemute"
+            : a.includes("down")
+              ? "volumedown"
+              : "volumeup";
+          const r = await desktopKeyPress(key);
+          if (r) return { ok: true, data: r };
+        }
+        if (a.includes("bright")) {
+          const r = await desktopKeyPress(
+            a.includes("down") ? "brightnessdown" : "brightnessup",
+          );
+          if (r) return { ok: true, data: r };
+        }
+      }
       if (a.includes("vol")) {
         return {
           ok: true,
-          data: "Browsers can't change system volume — use your keyboard media keys or the OS sound panel. (Tab audio can be muted from the tab itself.)",
+          data: "Browsers can't change system volume — install the desktop app for real volume control, or use your keyboard media keys.",
         };
       }
       if (a.includes("bright")) {
         return {
           ok: true,
-          data: "Browsers can't change screen brightness — use your keyboard brightness keys or the OS display panel.",
+          data: "Browsers can't change screen brightness — install the desktop app for real control, or use your keyboard brightness keys.",
         };
       }
       if (a.includes("wifi") || a.includes("wi-fi")) {
@@ -308,22 +327,74 @@ export const TOOLS: JarvisTool[] = [
     name: "Computer Control",
     category: "system",
     description:
-      "Keyboard, mouse and window automation require a native bridge — not possible from a browser tab.",
+      "Move/click the mouse, scroll, press keys, type — real control in the desktop app.",
     llmDescription:
-      "keyboard shortcuts, mouse and window management — DESKTOP ONLY: this browser console cannot control the OS input; say a native bridge is required",
-    argHint: "",
-    desktopOnly: true,
+      'control keyboard and mouse — actions: move <x> <y> | moveby <dx> <dy> | click [left|right|middle] | scroll <amount> | key <name|char> (enter, tab, escape, f5, volumeup…) | type <text>',
+    argHint: "action + args",
+    handler: async (arg) => {
+      const { desktopMouseMove, desktopMouseClick, desktopMouseScroll, desktopKeyPress, desktopTypeText } =
+        await import("./desktop-bridge");
+      const a = arg.trim();
+      const m = a.match(/^(move|moveby|click|scroll|key|type)\b\s*(.*)$/i);
+      if (!m) return { ok: false, data: 'Try: move 500 300 · moveby -100 0 · click right · scroll 3 · key enter · type "hello there"' };
+      const [, cmd, rest] = m;
+      if (/^move$/i.test(cmd)) {
+        const [x, y] = rest.split(/[ ,]+/).map(Number);
+        if (Number.isNaN(x) || Number.isNaN(y)) return { ok: false, data: "move needs x y coordinates" };
+        const r = await desktopMouseMove(x, y);
+        return r ? { ok: true, data: r } : { ok: false, data: "Mouse control needs the desktop app (browser tabs can't move the cursor)." };
+      }
+      if (/^moveby$/i.test(cmd)) {
+        const [dx, dy] = rest.split(/[ ,]+/).map(Number);
+        if (Number.isNaN(dx) || Number.isNaN(dy)) return { ok: false, data: "moveby needs dx dy offsets" };
+        const r = await desktopMouseMove(dx, dy, true);
+        return r ? { ok: true, data: r } : { ok: false, data: "Mouse control needs the desktop app." };
+      }
+      if (/^click$/i.test(cmd)) {
+        const btn = rest.toLowerCase();
+        const r = await desktopMouseClick(btn === "right" || btn === "middle" ? btn : "left");
+        return r ? { ok: true, data: r } : { ok: false, data: "Mouse control needs the desktop app." };
+      }
+      if (/^scroll$/i.test(cmd)) {
+        const n = Number(rest);
+        if (Number.isNaN(n)) return { ok: false, data: "scroll needs an amount (positive = up, negative = down)" };
+        const r = await desktopMouseScroll(n * 120);
+        return r ? { ok: true, data: r } : { ok: false, data: "Scroll control needs the desktop app." };
+      }
+      if (/^key$/i.test(cmd)) {
+        if (!rest) return { ok: false, data: "key needs a name: enter, tab, escape, f5, volumeup, or a single character" };
+        const r = await desktopKeyPress(rest);
+        return r ? { ok: true, data: r } : { ok: false, data: "Keyboard control needs the desktop app." };
+      }
+      // type
+      const r = await desktopTypeText(rest);
+      return r ? { ok: true, data: r } : { ok: false, data: "Text injection needs the desktop app." };
+    },
   },
   {
     id: "desktop_control",
     name: "Desktop Control",
     category: "system",
     description:
-      "Desktop & taskbar management needs a native OS bridge — outside browser reach.",
+      "Takes a screenshot of your actual desktop and shows it in the viewer.",
     llmDescription:
-      "manage the desktop and taskbar — DESKTOP ONLY: requires a native bridge outside the browser",
-    argHint: "",
-    desktopOnly: true,
+      'see the desktop — actions: picture (screenshot of the real desktop, shown in the viewer)',
+    argHint: "picture",
+    handler: async (arg) => {
+      const { desktopPicture } = await import("./desktop-bridge");
+      if (!/picture|screenshot|see|shot/i.test(arg) && arg.trim() !== "") {
+        return { ok: false, data: 'Try "picture" to capture the desktop.' };
+      }
+      const shot = await desktopPicture();
+      if (!shot) {
+        return { ok: false, data: "Desktop capture needs the desktop app — in a browser, use the Screen tool instead." };
+      }
+      return {
+        ok: true,
+        data: `Desktop captured (${shot.width}×${shot.height}) — displayed in the viewer.`,
+        image: shot.data_uri,
+      };
+    },
   },
 
   // ============ FILES & CODE ============

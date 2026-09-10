@@ -19,35 +19,34 @@ Uninstall anytime via right-click on the Start menu entry.
 
 ---
 
-## Option 2 — Native Windows app with real OS powers (Tauri)
+## Option 2 — Native Windows `.exe` installer, built automatically (recommended)
 
-The PWA is great, but browsers sandbox OS access. The Tauri build in
-`src-tauri/` ships a real `.exe` + installer where the **System Monitor** reads
-actual CPU/RAM/GPU/uptime and **Open App** launches real programs (notepad,
-calculator, vscode, steam, spotify, discord…).
+You do **not** need Rust on your machine. A GitHub Actions workflow
+(`.github/workflows/desktop-build.yml`) builds the real installer for you on
+Microsoft's servers every time the code lands on `main`.
 
-### Build it on your Windows machine
+### Get the installer in 3 steps
 
-Prerequisites (one-time):
-1. **Rust** — install from <https://rustup.rs>
-2. **Visual Studio Build Tools** with "Desktop development with C++"
-   <https://visualstudio.microsoft.com/visual-cpp-build-tools/>
-3. **Bun** (you likely have it) and **WebView2** (preinstalled on Windows 11)
+1. **Push this project to a GitHub repo** (e.g. `you/jarvis`).
+2. Wait for the **"Build Windows installer"** action to finish (Actions tab,
+   ~10–15 min the first time). It runs `bun tauri build` on `windows-latest`.
+3. Download from either place:
+   - The run's **Artifacts** section → `JARVIS-Windows-Installer`
+     (NSIS `.exe` setup + `.msi`), or `JARVIS-Windows-Portable` (single exe)
+   - Tagged versions (`v1.0.0` etc.) additionally land in the repo's
+     **Releases** page as permanent download links
 
-Then from the project root:
+Then just run the setup exe → JARVIS installs like any Windows program
+(Start menu entry, uninstaller included).
+
+### Prefer building locally?
 
 ```powershell
-# dev mode — window opens with hot reload
+# one-time prerequisites: Rust (rustup.rs) + VS Build Tools (C++ workload)
 bun add -D @tauri-apps/cli
-bun tauri dev
-
-# build the installer
-bun tauri build
+bun tauri dev    # dev window with hot reload
+bun tauri build  # installer → src-tauri/target/release/bundle/
 ```
-
-The installer appears in `src-tauri/target/release/bundle/`:
-- `nsis/JARVIS Local Console_1.0.0_x64-setup.exe` — standard installer
-- `msi/JARVIS Local Console_1.0.0_x64_en-US.msi` — MSI package
 
 ### What unlocks in the desktop build
 
@@ -57,18 +56,26 @@ The installer appears in `src-tauri/target/release/bundle/`:
 | File tools (list/read/write/rename/delete) | ✅ (pick a folder) | ✅ (pick a folder) |
 | Local LLM (Ollama/Kobold/LM Studio) | ✅ | ✅ |
 | Web search, weather, YouTube | ✅ | ✅ |
-| System Monitor | limited (tab-level) | **real CPU/RAM/GPU/uptime** |
+| System Monitor | limited (tab-level) | **real CPU model + load, RAM, GPUs, uptime** |
 | Open App | URL schemes only | **launches real programs** |
-| Screen & camera capture | ✅ (with permission bar) | ✅ |
-| Reminders & notifications | ✅ while tab open | ✅ while app open |
+| Computer Control (mouse/keyboard) | ❌ | **real: move/click/scroll/key/type** |
+| Desktop Control (see the screen) | ❌ (webcam/screen-share only) | **real desktop screenshot** |
+| Volume / brightness | ❌ | **real media keys** |
+| Reminders & notifications | ✅ while tab open | ✅ system notifications |
 
-### Architecture notes
+### How the OS powers work
 
-- `src-tauri/src/lib.rs` — Rust commands: `system_info`, `launch_app`,
-  `open_url`, `desktop_status` (uses the `sysinfo` + `open` crates)
+- `src-tauri/src/lib.rs` — Rust commands (enigo input control, sysinfo stats,
+  screenshots desktop capture, launch/open/notify)
 - `src/lib/jarvis/desktop-bridge.ts` — typed frontend bridge; auto-detects the
   desktop runtime and falls back to browser behavior otherwise
-- The tool registry checks `ctx.desktop` and upgrades System Monitor / Open App
-  automatically — no code changes needed between targets
-- Cross-compiling from Linux/macOS to Windows isn't supported for Tauri;
-  run `bun tauri build` on the Windows machine itself
+- The tool registry upgrades Computer Control, Desktop Control, System Monitor,
+  Open App and Computer Settings automatically when the bridge is present
+
+### Mark-III parity notes
+
+Like the fatihmakes Mark repositories, JARVIS sees and controls the real
+machine in the desktop build: it can move the mouse, click, scroll, press keys,
+type text, capture the desktop to an image viewer, report live CPU/RAM/GPU
+stats (streamed every 2s via the `desktop-stats` event), launch applications,
+and fire OS notifications — all on-device, no cloud involved.
