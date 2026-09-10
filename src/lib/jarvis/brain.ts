@@ -384,7 +384,7 @@ function stringifyArgs(args: Record<string, unknown>): string {
 
 function needConnection(action: string): BrainResult {
   return {
-    reply: `To ${action}, first connect a local workspace folder — say "connect folder".`,
+    reply: `To ${action}, I need a workspace folder. Click "Connect folder" in the Files tab (or say "connect folder"). If you'd already connected one and this is a fresh page load, click "Reconnect" in the Files tab — the browser requires one click to resume access.`,
     intent: "fs.connect-needed",
     ok: false,
   };

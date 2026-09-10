@@ -38,6 +38,121 @@ function root(): FileSystemDirectoryHandle {
 export function setRoot(handle: FileSystemDirectoryHandle) {
   (globalThis as unknown as { __jarvisRoot?: FileSystemDirectoryHandle })
     .__jarvisRoot = handle;
+  // persist so the grant survives page reloads
+  void saveRoot(handle);
+}
+
+// ---------- workspace persistence (IndexedDB) ----------
+
+const DB_NAME = "jarvis-fs";
+const STORE = "handles";
+const KEY = "workspace-root";
+
+function idb(): Promise<IDBDatabase | null> {
+  return new Promise((resolve) => {
+    try {
+      if (typeof indexedDB === "undefined") return resolve(null);
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => {
+        req.result.createObjectStore(STORE);
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+async function saveRoot(handle: FileSystemDirectoryHandle): Promise<void> {
+  const db = await idb();
+  if (!db) return;
+  await new Promise<void>((resolve) => {
+    const tx = db.transaction(STORE, "readwrite");
+    tx.objectStore(STORE).put(handle, KEY);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => resolve();
+  });
+  db.close();
+}
+
+async function loadSavedRoot(): Promise<FileSystemDirectoryHandle | null> {
+  const db = await idb();
+  if (!db) return null;
+  const handle = await new Promise<FileSystemDirectoryHandle | null>(
+    (resolve) => {
+      const tx = db.transaction(STORE, "readonly");
+      const req = tx.objectStore(STORE).get(KEY);
+      req.onsuccess = () =>
+        resolve((req.result as FileSystemDirectoryHandle) ?? null);
+      req.onerror = () => resolve(null);
+    },
+  );
+  db.close();
+  return handle;
+}
+
+export async function clearSavedRoot(): Promise<void> {
+  (globalThis as unknown as { __jarvisRoot?: FileSystemDirectoryHandle })
+    .__jarvisRoot = undefined;
+  const db = await idb();
+  if (!db) return;
+  await new Promise<void>((resolve) => {
+    const tx = db.transaction(STORE, "readwrite");
+    tx.objectStore(STORE).delete(KEY);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => resolve();
+  });
+  db.close();
+}
+
+export type RootPermission = "granted" | "prompt" | "denied" | "none";
+
+interface PermissionHandle {
+  queryPermission?: (d: {
+    mode: "read" | "readwrite";
+  }) => Promise<PermissionState>;
+  requestPermission?: (d: {
+    mode: "read" | "readwrite";
+  }) => Promise<PermissionState>;
+}
+
+async function permOf(
+  handle: FileSystemDirectoryHandle,
+): Promise<Exclude<RootPermission, "none">> {
+  const p = handle as unknown as PermissionHandle;
+  try {
+    const state =
+      (await p.queryPermission?.({ mode: "readwrite" })) ?? "prompt";
+    return state as Exclude<RootPermission, "none">;
+  } catch {
+    return "prompt";
+  }
+}
+
+/** Re-attach the saved workspace after a reload. Returns its permission state. */
+export async function restoreRoot(): Promise<RootPermission> {
+  const handle = await loadSavedRoot();
+  if (!handle) return "none";
+  (globalThis as unknown as { __jarvisRoot?: FileSystemDirectoryHandle })
+    .__jarvisRoot = handle;
+  return permOf(handle);
+}
+
+/** Ask for readwrite access on the saved handle (must run in a user gesture). */
+export async function requestRootAccess(): Promise<boolean> {
+  const handle = (
+    globalThis as unknown as { __jarvisRoot?: FileSystemDirectoryHandle }
+  ).__jarvisRoot;
+  if (!handle) return false;
+  try {
+    const state = await (
+      handle as unknown as PermissionHandle
+    ).requestPermission?.({ mode: "readwrite" });
+    return state === "granted";
+  } catch {
+    return false;
+  }
 }
 
 export function hasRoot(): boolean {

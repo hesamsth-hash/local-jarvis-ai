@@ -1,4 +1,12 @@
-import { FileText, FolderOpen, FolderTree, HardDrive, RefreshCw } from "lucide-react";
+import {
+  FileText,
+  FolderOpen,
+  FolderTree,
+  HardDrive,
+  RefreshCw,
+  ShieldAlert,
+  Unplug,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { FsEntryView } from "@/lib/jarvis/types";
@@ -10,7 +18,11 @@ interface FileDeckProps {
   path: string;
   entries: FsEntryView[];
   loading: boolean;
+  savedPermission?: string;
+  needsReconnect?: boolean;
   onConnect: () => void;
+  onReconnect?: () => void;
+  onDisconnect?: () => void;
   onRefresh: () => void;
   onOpen: (entry: FsEntryView) => void;
 }
@@ -26,9 +38,13 @@ export function FileDeck({
   connected,
   rootLabel,
   path,
+  savedPermission,
   entries,
   loading,
+  needsReconnect,
   onConnect,
+  onReconnect,
+  onDisconnect,
   onRefresh,
   onOpen,
 }: FileDeckProps) {
@@ -51,18 +67,46 @@ export function FileDeck({
           </div>
         </div>
         {connected && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-7"
-            onClick={onRefresh}
-            disabled={loading}
-            aria-label="Refresh"
-          >
-            <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              onClick={onRefresh}
+              disabled={loading}
+              aria-label="Refresh"
+            >
+              <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
+            </Button>
+            {onDisconnect && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7 text-muted-foreground"
+                onClick={onDisconnect}
+                aria-label="Disconnect workspace"
+              >
+                <Unplug className="size-3.5" />
+              </Button>
+            )}
+          </div>
         )}
       </div>
+
+      {connected && needsReconnect && (
+        <div className="flex items-center gap-3 bg-amber-500/10 px-4 py-3 ring-1 ring-inset ring-amber-500/25">
+          <ShieldAlert className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium">Access needs one click to resume</p>
+            <p className="text-[11px] text-muted-foreground">
+              The browser requires you to re-grant this folder after a reload.
+            </p>
+          </div>
+          <Button size="sm" className="h-7 shrink-0 text-xs" onClick={onReconnect}>
+            Reconnect
+          </Button>
+</div>
+      )}
 
       {!connected ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">

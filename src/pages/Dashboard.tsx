@@ -247,7 +247,12 @@ export default function Dashboard() {
                 path={jarvis.fsPath}
                 entries={jarvis.fsEntries}
                 loading={jarvis.fsLoading}
+                needsReconnect={
+                  jarvis.connected && jarvis.savedPermission !== "granted"
+                }
                 onConnect={() => void jarvis.connectFolder()}
+                onReconnect={() => void jarvis.resumeAccess()}
+                onDisconnect={() => void jarvis.disconnectFolder()}
                 onRefresh={() => void jarvis.refreshFs(jarvis.fsPath)}
                 onOpen={jarvis.openEntry}
               />

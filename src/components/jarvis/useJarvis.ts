@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { hasRoot, listDir, pickRootFolder, setRoot } from "@/lib/jarvis/fs-tools";
+import {
+  clearSavedRoot,
+  hasRoot,
+  listDir,
+  pickRootFolder,
+  requestRootAccess,
+  restoreRoot,
+  setRoot,
+  type RootPermission,
+} from "@/lib/jarvis/fs-tools";
 import { runBrain, type BrainResult } from "@/lib/jarvis/brain";
 import { ttsEngine } from "@/lib/jarvis/kokoro-tts";
 import { sttEngine } from "@/lib/jarvis/whisper-stt";
@@ -185,14 +194,60 @@ export function useJarvis() {
     if (!handle) return false;
     setRoot(handle);
     setConnected(true);
+    setSavedPermission("granted");
     setRootLabel(handle.name);
     await refreshFs("");
     return true;
   }, [refreshFs]);
 
+  const disconnectFolder = useCallback(async () => {
+    await clearSavedRoot();
+    setConnected(false);
+    setSavedPermission("none");
+    setRootLabel(null);
+    setFsEntries([]);
+    setFsPath("");
+  }, []);
+
   useEffect(() => {
     if (connected) void refreshFs("");
   }, [connected, refreshFs]);
+
+  // Re-attach a previously granted folder after a page reload.
+  const [savedPermission, setSavedPermission] = useState<RootPermission>("none");
+  const resumeAccess = useCallback(async () => {
+    const ok = await requestRootAccess();
+    if (ok) {
+      setConnected(true);
+      setSavedPermission("granted");
+      await refreshFs("");
+      pushMessage({
+        id: uid(),
+        role: "system",
+        content: "Workspace access restored — file tools are live again.",
+        createdAt: Date.now(),
+      });
+    }
+    return ok;
+  }, [refreshFs, pushMessage]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const perm = await restoreRoot();
+      if (cancelled) return;
+      setSavedPermission(perm);
+      if (perm === "granted") {
+        setConnected(true);
+        // name comes from the handle
+        const mod = await import("@/lib/jarvis/fs-tools");
+        setRootLabel(mod.rootName());
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // ---------- notifications ----------
   const notify = useCallback((title: string, body?: string) => {
@@ -603,7 +658,7 @@ export function useJarvis() {
     engines, loadEngines,
     voice, setVoice, speed, setSpeed, autoSpeak, setAutoSpeak,
     connected, rootLabel, fsPath, fsEntries, fsLoading,
-    connectFolder, refreshFs, openEntry,
+    connectFolder, refreshFs, openEntry, resumeAccess, savedPermission, disconnectFolder,
     toggleListening, stopSpeaking, process,
     history, commandCount,
     // llm / brain
