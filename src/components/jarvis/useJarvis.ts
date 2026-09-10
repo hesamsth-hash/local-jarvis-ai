@@ -27,6 +27,7 @@ import {
   type ModelInfo,
 } from "@/lib/jarvis/llm";
 import type { ToolContext, ToolResult } from "@/lib/jarvis/tools";
+import { isDesktop } from "@/lib/jarvis/desktop-bridge";
 import type {
   ChatMessage,
   EngineLoadState,
@@ -487,6 +488,7 @@ export function useJarvis() {
       notify,
       connectFolder,
       connected: connectedRef.current,
+      desktop: isDesktop(),
     }),
     [capture, notify, connectFolder, openExternal],
   );

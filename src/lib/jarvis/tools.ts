@@ -1,6 +1,12 @@
+import {
+  desktopLaunchApp,
+  desktopSystemInfo,
+} from "./desktop-bridge";
+
 // Tool registry — every JARVIS capability, grouped by category.
-// Browser-executable tools are implemented here; OS-level tools are declared
-// with `desktopOnly: true` so the LLM knows to say they need a native bridge.
+// Browser-executable tools are implemented here; OS-level tools get REAL
+// implementations through the Tauri desktop bridge when running as the
+// installed Windows app, and honest refusals in the browser.
 
 export interface ToolResult {
   ok: boolean;
@@ -16,6 +22,8 @@ export interface ToolContext {
   notify: (title: string, body?: string) => void;
   connectFolder: () => Promise<boolean>;
   connected: boolean;
+  /** True when running as the native desktop app (Tauri bridge online) */
+  desktop: boolean;
 }
 
 export interface ToolCategory {
@@ -180,11 +188,23 @@ export const TOOLS: JarvisTool[] = [
     id: "system_monitor",
     name: "System Monitor",
     category: "system",
-    description: "CPU cores, memory, GPU, battery, screen & uptime.",
+    description:
+      "CPU, RAM, GPU, battery, screen & uptime — full detail in the desktop app.",
     llmDescription:
-      "report this device's hardware status (CPU cores, memory, GPU, battery, screen)",
+      "report this device's hardware status (CPU model + load, RAM usage, GPU, battery, screen)",
     argHint: "",
     handler: async () => {
+      // Desktop bridge: real OS-level stats
+      const info = await desktopSystemInfo();
+      if (info) {
+        const mins = Math.floor(info.uptime_secs / 60);
+        const hours = Math.floor(mins / 60);
+        return {
+          ok: true,
+          data: `${info.hostname} · ${info.os_name} ${info.os_version} · CPU ${info.cpu_brand} (${info.cpu_cores} cores, ${info.cpu_usage_percent.toFixed(0)}% load) · RAM ${info.used_memory_gb.toFixed(1)}/${info.total_memory_gb.toFixed(1)} GB${info.gpu_names.length ? ` · GPU ${info.gpu_names.join(", ")}` : ""} · up ${hours}h ${mins % 60}m`,
+        };
+      }
+      // Browser fallback: what a tab can see
       const nav = navigator as Navigator & {
         deviceMemory?: number;
         getBattery?: () => Promise<{ level: number; charging: boolean }>;
@@ -237,11 +257,16 @@ export const TOOLS: JarvisTool[] = [
     id: "open_app",
     name: "Open App",
     category: "system",
-    description: "Launches apps/sites via URL schemes (mailto, vscode…).",
+    description:
+      "Launches real apps via the desktop bridge, or URL schemes in the browser.",
     llmDescription:
-      'open an application or URL scheme — actions: app <name-or-scheme>, url <full-url>',
+      'open an application — actions: app <name> (notepad, calculator, vscode, spotify, steam…), url <full-url>',
     argHint: "app name or scheme",
-    handler: async (arg, ctx) => ctx.sub("openapp", arg),
+    handler: async (arg, ctx) => {
+      const msg = await desktopLaunchApp(arg);
+      if (msg) return { ok: true, data: msg };
+      return ctx.sub("openapp", arg);
+    },
   },
   {
     id: "computer_settings",

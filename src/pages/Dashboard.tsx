@@ -3,6 +3,7 @@ import {
   AudioLines,
   BrainCircuit,
   Cpu,
+  Download,
   FolderOpen,
   History,
   Puzzle,
@@ -26,12 +27,14 @@ import { PluginBay } from "@/components/jarvis/PluginBay";
 import { SystemStrip } from "@/components/jarvis/SystemStrip";
 import { VoiceControls } from "@/components/jarvis/VoiceControls";
 import { useJarvis } from "@/components/jarvis/useJarvis";
+import { usePwaInstall } from "@/hooks/use-pwa-install";
 import { cn } from "@/lib/utils";
 
 export default function Dashboard() {
   const jarvis = useJarvis();
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const { canInstall, install, standalone } = usePwaInstall();
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
@@ -83,6 +86,17 @@ export default function Dashboard() {
             </span>
           </div>
           <div className="flex items-center gap-2">
+            {canInstall && !standalone && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 rounded-full px-3 text-xs"
+                onClick={() => void install()}
+              >
+                <Download className="size-3.5" />
+                Install app
+              </Button>
+            )}
             {user?.name || user?.email ? (
               <span className="hidden truncate rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground sm:block">
                 {user?.name ?? user?.email}

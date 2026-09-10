@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { usePwaInstall } from "@/hooks/use-pwa-install";
+import { Download } from "lucide-react";
 
 const fadeUp = {
   initial: { opacity: 0, y: 18 },
@@ -79,6 +81,7 @@ const STEPS = [
 ];
 
 export default function Landing() {
+  const { canInstall, install, standalone } = usePwaInstall();
   return (
     <div className="bg-grid relative min-h-screen overflow-hidden bg-background text-foreground">
       <div className="aurora" />
@@ -104,6 +107,16 @@ export default function Landing() {
             <Button asChild variant="ghost" className="hidden rounded-full sm:inline-flex">
               <a href="#how">How it works</a>
             </Button>
+            {canInstall && !standalone && (
+              <Button
+                variant="outline"
+                className="gap-1.5 rounded-full"
+                onClick={() => void install()}
+              >
+                <Download className="size-4" />
+                Install app
+              </Button>
+            )}
             <Button asChild variant="outline" className="rounded-full">
               <a href="/dashboard">Open console</a>
             </Button>
@@ -155,6 +168,18 @@ export default function Landing() {
             <a href="#features">See what it can do</a>
           </Button>
         </motion.div>
+        {canInstall && !standalone && (
+          <p className="mt-4 text-xs text-muted-foreground">
+            or{" "}
+            <button
+              className="font-medium text-primary underline underline-offset-2"
+              onClick={() => void install()}
+            >
+              install JARVIS as a Windows app
+            </button>{" "}
+            — Start menu, own window, works offline
+          </p>
+        )}
 
         {/* Orb hero visual */}
         <motion.div
