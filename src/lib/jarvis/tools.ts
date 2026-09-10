@@ -419,10 +419,10 @@ export const TOOLS: JarvisTool[] = [
     name: "Computer Settings",
     category: "system",
     description:
-      "Volume & brightness via real media keys on desktop; guidance in the browser.",
+      "Volume & media playback via real media keys on desktop; brightness/wifi/power guidance.",
     llmDescription:
-      'adjust system settings — actions: volume <up|down|mute>, brightness <up|down>, wifi, power',
-    argHint: "volume|brightness|wifi|power",
+      'adjust system settings — actions: volume <up|down|mute>, media <play|next|prev>, brightness <up|down>, wifi, power',
+    argHint: "volume|media|brightness|wifi|power",
     handler: async (arg, ctx) => {
       const a = arg.toLowerCase();
       if (ctx.desktop) {
@@ -436,10 +436,13 @@ export const TOOLS: JarvisTool[] = [
           const r = await desktopKeyPress(key);
           if (r) return { ok: true, data: r };
         }
-        if (a.includes("bright")) {
-          const r = await desktopKeyPress(
-            a.includes("down") ? "brightnessdown" : "brightnessup",
-          );
+        if (/media|play|music/.test(a)) {
+          const key = a.includes("next")
+            ? "medianext"
+            : a.includes("prev")
+              ? "mediaprev"
+              : "mediaplaypause";
+          const r = await desktopKeyPress(key);
           if (r) return { ok: true, data: r };
         }
       }
@@ -449,10 +452,16 @@ export const TOOLS: JarvisTool[] = [
           data: "Browsers can't change system volume — install the desktop app for real volume control, or use your keyboard media keys.",
         };
       }
+      if (/media|play|music/.test(a)) {
+        return {
+          ok: true,
+          data: "Browsers can't send media keys — install the desktop app for real play/pause/skip control.",
+        };
+      }
       if (a.includes("bright")) {
         return {
           ok: true,
-          data: "Browsers can't change screen brightness — install the desktop app for real control, or use your keyboard brightness keys.",
+          data: "Brightness is controlled by your display/OS power system — use your keyboard brightness keys or the system settings panel (a web/desktop app can't change it directly).",
         };
       }
       if (a.includes("wifi") || a.includes("wi-fi")) {

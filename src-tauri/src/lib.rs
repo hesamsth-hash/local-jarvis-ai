@@ -1,7 +1,7 @@
 use base64::Engine as _;
 use serde::Serialize;
 use std::sync::Mutex;
-use sysinfo::System;
+use sysinfo::{Components, System};
 
 // ---------------- System info ----------------
 
@@ -30,8 +30,9 @@ fn collect_info() -> SystemInfo {
         .unwrap_or_else(|| "Unknown CPU".into());
 
     // Probe common GPU component labels (varies by driver/platform).
-    let gpus: Vec<String> = sys
-        .components()
+    let components = Components::new_with_refreshed_list();
+    let gpus: Vec<String> = components
+        .list()
         .iter()
         .filter_map(|c| {
             let label = c.label().to_lowercase();
@@ -249,9 +250,17 @@ fn key_press(state: tauri::State<'_, InputState>, key: String) -> Result<String,
             ("volumeup", Key::VolumeUp),
             ("volumedown", Key::VolumeDown),
             ("volumemute", Key::VolumeMute),
-            ("brightnessup", Key::BrightnessUp),
-            ("brightnessdown", Key::BrightnessDown),
-            ("media", Key::Media),
+            ("medianext", Key::MediaNextTrack),
+            ("mediaprev", Key::MediaPrevTrack),
+            ("mediaplaypause", Key::MediaPlayPause),
+            ("printscreen", Key::PrintScr),
+            ("insert", Key::Insert),
+            ("capslock", Key::CapsLock),
+            ("numlock", Key::Numlock),
+            ("meta", Key::Meta),
+            ("shift", Key::Shift),
+            ("control", Key::Control),
+            ("alt", Key::Alt),
         ];
         let lower = key.to_lowercase();
         for (name, k) in SPECIAL {
@@ -346,7 +355,7 @@ fn launch_app(name: String) -> OkMsg {
 
 #[tauri::command]
 fn open_url(url: String) -> OkMsg {
-    match tauri_plugin_opener::open_url(url.clone()) {
+    match open::that(url.clone()) {
         Ok(_) => OkMsg {
             ok: true,
             message: format!("Opened {url}."),
@@ -361,7 +370,8 @@ fn open_url(url: String) -> OkMsg {
 #[tauri::command]
 fn notify(app: tauri::AppHandle, title: String, body: String) -> Result<String, String> {
     use tauri_plugin_notification::NotificationExt;
-    app.notification_builder()
+    app.notification()
+        .builder()
         .title(title)
         .body(body)
         .show()
