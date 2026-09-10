@@ -32,12 +32,19 @@ const schema = defineSchema(
       role: v.optional(roleValidator), // role of the user. do not remove
     }).index("email", ["email"]), // index for the email. do not remove or modify
 
-    // add other tables here
-
-    // tableName: defineTable({
-    //   ...
-    //   // table fields
-    // }).index("by_field", ["field"])
+    // JARVIS console: local command log (what the user asked, what JARVIS did)
+    commandLogs: defineTable({
+      userId: v.id("users"),
+      input: v.string(), // raw user input (text or transcribed speech)
+      inputMode: v.union(v.literal("text"), v.literal("voice")),
+      intent: v.optional(v.string()), // e.g. "fs.list", "tts.speak", "unknown"
+      toolName: v.optional(v.string()), // plugin/tool that handled it, if any
+      response: v.optional(v.string()), // JARVIS's reply text
+      ok: v.boolean(),
+      createdAt: v.number(),
+    })
+      .index("by_user", ["userId"])
+      .index("by_user_time", ["userId", "createdAt"]),
   },
   {
     schemaValidation: false,
