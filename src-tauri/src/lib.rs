@@ -272,7 +272,9 @@ fn key_press(state: tauri::State<'_, InputState>, key: String) -> Result<String,
         // Single character
         let mut chars = key.chars();
         if let (Some(c), None) = (chars.next(), chars.next()) {
-            enigo.key(c, enigo::Direction::Click).map_err(|e| e.to_string())?;
+            enigo
+                .key(enigo::Key::Unicode(c), enigo::Direction::Click)
+                .map_err(|e| e.to_string())?;
             return Ok(format!("Pressed {c}."));
         }
         // Word of text → type it
@@ -300,15 +302,23 @@ pub struct Screenshot {
 
 #[tauri::command]
 fn desktop_picture() -> Result<Screenshot, String> {
+    use image::codecs::png::PngEncoder;
+    use image::{ExtendedColorType, ImageEncoder};
     let screens =
         screenshots::Screen::all().map_err(|e| format!("screen enumerate failed: {e}"))?;
     let screen = screens.first().ok_or("no screen found")?;
     let shot = screen.capture().map_err(|e| format!("capture failed: {e}"))?;
     let (w, h) = (shot.width(), shot.height());
-    let mut png = std::io::Cursor::new(Vec::new());
-    shot.write_to(&mut png, image::ImageFormat::Png)
+    let mut png = Vec::new();
+    PngEncoder::new(std::io::Cursor::new(&mut png))
+        .write_image(
+            shot.as_raw(),
+            w,
+            h,
+            ExtendedColorType::Rgba8,
+        )
         .map_err(|e| format!("png encode failed: {e}"))?;
-    let b64 = base64::engine::general_purpose::STANDARD.encode(png.get_ref());
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
     Ok(Screenshot {
         data_uri: format!("data:image/png;base64,{b64}"),
         width: w,

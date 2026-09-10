@@ -22,10 +22,23 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
+      - name: Build frontend (isolated so its errors are obvious)
+        run: bun run build
+
+      - name: Install Rust toolchain (with error matchers)
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: x86_64-pc-windows-msvc
+
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+
+      # Fast-fail: surfaces any compile error as a clean file/line annotation
+      # before the long bundling process starts.
+      - name: Typecheck Rust crate (fast)
+        run: cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
 
       - name: Build Tauri app + installers
         uses: tauri-apps/tauri-action@v0
