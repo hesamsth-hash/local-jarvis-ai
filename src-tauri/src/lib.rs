@@ -1,4 +1,5 @@
 use base64::Engine as _;
+use enigo::{Keyboard, Mouse};
 use serde::Serialize;
 use std::sync::Mutex;
 use sysinfo::{Components, System};
@@ -310,7 +311,7 @@ fn desktop_picture() -> Result<Screenshot, String> {
     let shot = screen.capture().map_err(|e| format!("capture failed: {e}"))?;
     let (w, h) = (shot.width(), shot.height());
     let mut png = Vec::new();
-    PngEncoder::new(std::io::Cursor::new(&mut png))
+    PngEncoder::new(&mut png)
         .write_image(
             shot.as_raw(),
             w,
@@ -336,7 +337,8 @@ pub struct OkMsg {
 
 #[tauri::command]
 fn launch_app(name: String) -> OkMsg {
-    let candidates: Vec<&str> = match name.to_lowercase().as_str() {
+    let lowered = name.to_lowercase();
+    let candidates: Vec<&str> = match lowered.as_str() {
         "notepad" => vec!["notepad"],
         "calculator" | "calc" => vec!["calc"],
         "paint" => vec!["mspaint"],
