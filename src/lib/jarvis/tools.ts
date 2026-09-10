@@ -25,6 +25,8 @@ export interface ToolContext {
   connected: boolean;
   /** True when running as the native desktop app (Tauri bridge online) */
   desktop: boolean;
+  /** Local LLM config — used by vision tools (See & Act) */
+  llm: import("./llm").LlmConfig;
 }
 
 export interface ToolCategory {
@@ -261,12 +263,155 @@ export const TOOLS: JarvisTool[] = [
     description:
       "Launches real apps via the desktop bridge, or URL schemes in the browser.",
     llmDescription:
-      'open an application — actions: app <name> (notepad, calculator, vscode, spotify, steam…), url <full-url>',
+      'open an application — actions: app <name> (notepad, calculator, vscode, spotify, steam…), run <anything> (any exe/script/document/folder by name or full path), url <full-url>',
     argHint: "app name or scheme",
     handler: async (arg, ctx) => {
       const msg = await desktopLaunchApp(arg);
-      if (msg) return { ok: true, data: msg };
+      if (msg && !msg.startsWith("Couldn't")) return { ok: true, data: msg };
+      // Not in the known-apps list — try the generic executor (any path/name).
+      if (ctx.desktop) {
+        const { desktopExecute } = await import("./desktop-bridge");
+        const parts = arg.match(/(?:[^\s"]+|"[^"]*")+/g)?.map((p) => p.replace(/^"|"$/g, "")) ?? [];
+        if (parts.length) {
+          const r = await desktopExecute(parts[0]!, parts.slice(1));
+          if (r && !r.startsWith("Couldn't")) return { ok: true, data: r };
+        }
+      }
       return ctx.sub("openapp", arg);
+    },
+  },
+  {
+    id: "execute",
+    name: "Execute",
+    category: "system",
+    description:
+      "Launches ANY program, script, document or folder — by name or full path.",
+    llmDescription:
+      'execute/launch anything on the machine that open_app doesn\'t know — args: the program, script, document or folder (name or full path), optionally followed by quoted args. e.g. "C:\\Windows\\System32\\mspaint.exe", "python train.py", "D:\\Games\\game.exe"',
+    argHint: "program or path [args...]",
+    handler: async (arg) => {
+      const { desktopExecute } = await import("./desktop-bridge");
+      const parts =
+        arg.match(/(?:[^\s"]+|"[^"]*")+/g)?.map((p) => p.replace(/^"|"$/g, "")) ?? [];
+      if (!parts.length)
+        return { ok: false, data: "Give me a program, script, document or folder to launch." };
+      const r = await desktopExecute(parts[0]!, parts.slice(1));
+      return r
+        ? { ok: true, data: r }
+        : { ok: false, data: "Executing arbitrary programs needs the desktop app — in a browser, try URL schemes instead." };
+    },
+  },
+  {
+    id: "see_act",
+    name: "See & Act",
+    category: "system",
+    description:
+      "Vision-guided control: screenshots the screen, visually finds what you describe, then clicks/drags/draws on it.",
+    llmDescription:
+      'vision-guided computer use — take a screenshot, visually locate something on screen, then act on it. actions: click <what to find>, doubleclick <target>, rightclick <target>, drag <from what> to <to what>, draw <shape or stroke description>, find <target> (locate and hover without clicking)',
+    argHint: "action + target description",
+    handler: async (arg, ctx) => {
+      const {
+        desktopPicture,
+        desktopScreenMetrics,
+        desktopMouseMove,
+        desktopMouseClick,
+        desktopMouseDoubleClick,
+        desktopMouseDrag,
+        desktopMouseDraw,
+      } = await import("./desktop-bridge");
+      const { visionLocate, visionPath } = await import("./llm");
+      const a = arg.trim();
+      const m = a.match(/^(click|doubleclick|rightclick|drag|draw|find)\b([\s\S]*)$/i);
+      if (!m)
+        return {
+          ok: false,
+          data: 'Try: click "the send button" · doubleclick "file icon Notes" · drag "slider handle" to "the right end" · draw "a circle around the chart" · find "search box"',
+        };
+      const action = m[1]!.toLowerCase();
+      const rest = m[2]!.trim().replace(/^[:\-]?\s*/, "");
+      if (!ctx.desktop) {
+        return {
+          ok: false,
+          data: "See & Act drives the real mouse — it needs the desktop app. In a browser, Screen & Camera can show the screen but not act on it.",
+        };
+      }
+      const shot = await desktopPicture();
+      if (!shot)
+        return { ok: false, data: "Couldn't capture the desktop for vision." };
+      // The vision model reads the screenshot; the mouse commands run in the
+      // OS coordinate space. Ask the bridge for that space and scale exactly.
+      const metrics = await desktopScreenMetrics();
+      const mouseW = metrics?.width ?? shot.width;
+      const mouseH = metrics?.height ?? shot.height;
+      const sx = shot.width / mouseW;
+      const sy = shot.height / mouseH;
+      const toLogical = (p: { x: number; y: number }) => ({
+        x: Math.round(p.x / sx),
+        y: Math.round(p.y / sy),
+      });
+      if (action === "draw") {
+        const path = await visionPath(
+          ctx.llm,
+          shot.data_uri,
+          shot.width,
+          shot.height,
+          rest || "draw the requested stroke",
+        );
+        if (path.error || !path.points)
+          return { ok: false, data: path.error ?? "Couldn't plan a path." };
+        const pts = path.points.map(toLogical);
+        const r = await desktopMouseDraw(pts);
+        return r
+          ? { ok: true, data: `Drew the stroke (${pts.length} points) — done.` }
+          : { ok: false, data: "Drawing failed." };
+      }
+      // All other actions need at least one located target.
+      const locate = async (desc: string) => {
+        const res = await visionLocate(
+          ctx.llm,
+          shot.data_uri,
+          shot.width,
+          shot.height,
+          desc,
+        );
+        if (res.error || !res.target) throw new Error(res.error ?? "locate failed");
+        return res.target;
+      };
+      try {
+        if (action === "drag") {
+          const dm = rest.match(/^(.*?)\s+(?:to|→|->)\s+(.+)$/i);
+          if (!dm)
+            return { ok: false, data: 'Drag needs two targets: drag "<from what>" to "<to what>".' };
+          const from = await locate(dm[1]!.trim().replace(/^"|"$/g, ""));
+          const to = await locate(dm[2]!.trim().replace(/^"|"$/g, ""));
+          const r = await desktopMouseDrag(
+            toLogical(from).x, toLogical(from).y,
+            toLogical(to).x, toLogical(to).y,
+          );
+          return r
+            ? { ok: true, data: `Dragged "${from.description}" → "${to.description}".` }
+            : { ok: false, data: "Drag failed." };
+        }
+        const target = await locate(rest.replace(/^"|"$/g, ""));
+        const pt = toLogical(target);
+        await desktopMouseMove(pt.x, pt.y);
+        if (action === "find") {
+          return { ok: true, data: `Found "${target.description}" at (${target.x}, ${target.y}) — hovering there now.` };
+        }
+        if (action === "click") {
+          const r = await desktopMouseClick("left");
+          return r ? { ok: true, data: `Clicked "${target.description}".` } : { ok: false, data: "Click failed." };
+        }
+        if (action === "doubleclick") {
+          const r = await desktopMouseDoubleClick();
+          return r ? { ok: true, data: `Double-clicked "${target.description}".` } : { ok: false, data: "Double-click failed." };
+        }
+        const r = await desktopMouseClick("right");
+        return r ? { ok: true, data: `Right-clicked "${target.description}".` } : { ok: false, data: "Right-click failed." };
+      } catch (e) {
+        return { ok: false, data: e instanceof Error ? e.message : "Vision locate failed." };
+      }
     },
   },
   {

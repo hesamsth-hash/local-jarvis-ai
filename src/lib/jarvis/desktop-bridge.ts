@@ -76,6 +76,16 @@ export async function desktopMouseClick(
   }
 }
 
+export async function desktopMouseDoubleClick(): Promise<string | null> {
+  const t = tauri();
+  if (!t) return null;
+  try {
+    return (await t.invoke("mouse_double_click")) as string;
+  } catch (e) {
+    return e instanceof Error ? `Double-click failed: ${e.message}` : "Double-click failed.";
+  }
+}
+
 export async function desktopMouseScroll(amount: number): Promise<string | null> {
   const t = tauri();
   if (!t) return null;
@@ -83,6 +93,36 @@ export async function desktopMouseScroll(amount: number): Promise<string | null>
     return (await t.invoke("mouse_scroll", { amount })) as string;
   } catch (e) {
     return e instanceof Error ? `Scroll failed: ${e.message}` : "Scroll failed.";
+  }
+}
+
+export async function desktopMouseDrag(
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+  steps?: number,
+): Promise<string | null> {
+  const t = tauri();
+  if (!t) return null;
+  try {
+    return (await t.invoke("mouse_drag", { fromX, fromY, toX, toY, steps })) as string;
+  } catch (e) {
+    return e instanceof Error ? `Drag failed: ${e.message}` : "Drag failed.";
+  }
+}
+
+export async function desktopMouseDraw(
+  points: { x: number; y: number }[],
+): Promise<string | null> {
+  const t = tauri();
+  if (!t) return null;
+  try {
+    return (await t.invoke("mouse_draw", {
+      points: points.map((p) => [p.x, p.y]),
+    })) as string;
+  } catch (e) {
+    return e instanceof Error ? `Draw failed: ${e.message}` : "Draw failed.";
   }
 }
 
@@ -124,6 +164,22 @@ export async function desktopPicture(): Promise<DesktopScreenshot | null> {
   }
 }
 
+/** Display size in the same coordinate space the mouse commands use. */
+export interface DesktopScreenMetrics {
+  width: number;
+  height: number;
+}
+
+export async function desktopScreenMetrics(): Promise<DesktopScreenMetrics | null> {
+  const t = tauri();
+  if (!t) return null;
+  try {
+    return (await t.invoke("screen_metrics")) as DesktopScreenMetrics;
+  } catch {
+    return null;
+  }
+}
+
 // ---------------- apps / urls / notifications ----------------
 
 export async function desktopLaunchApp(name: string): Promise<string | null> {
@@ -137,6 +193,27 @@ export async function desktopLaunchApp(name: string): Promise<string | null> {
     return res.message;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Launch ANY program, script, document or folder by name/path — goes through
+ * the native shell, so PATH apps, .lnk targets and files resolve too.
+ */
+export async function desktopExecute(
+  command: string,
+  args: string[] = [],
+): Promise<string | null> {
+  const t = tauri();
+  if (!t) return null;
+  try {
+    const res = (await t.invoke("execute_command", { command, args })) as {
+      ok: boolean;
+      message: string;
+    };
+    return res.message;
+  } catch (e) {
+    return e instanceof Error ? `Execute failed: ${e.message}` : "Execute failed.";
   }
 }
 

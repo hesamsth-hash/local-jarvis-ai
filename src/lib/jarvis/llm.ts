@@ -10,6 +10,8 @@ export interface LlmConfig {
   provider: LlmProviderKind;
   url: string; // e.g. http://localhost:11434 (ollama) or http://localhost:5001
   model: string;
+  /** Vision model for See & Act (e.g. llava, llama3.2-vision, qwen2-vl). Optional. */
+  visionModel?: string;
 }
 
 export const DEFAULT_LLM_CONFIG: LlmConfig = {
@@ -17,6 +19,7 @@ export const DEFAULT_LLM_CONFIG: LlmConfig = {
   provider: "ollama",
   url: "http://localhost:11434",
   model: "",
+  visionModel: "",
 };
 
 export const PRESETS: {
@@ -121,6 +124,14 @@ If no tool is needed, just answer in plain text.`;
 export interface LlmMessage {
   role: "system" | "user" | "assistant";
   content: string;
+  /** Ollama-style images: raw base64 (no data: prefix). */
+  images?: string[];
+  /** OpenAI-style multimodal content parts (used when images present on openai-compatible). */
+  contentParts?: {
+    type: "text" | "image_url";
+    text?: string;
+    image_url?: { url: string };
+  }[];
 }
 
 export interface ToolSpec {
@@ -166,7 +177,11 @@ export async function llmChat(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: cfg.model || "local-model",
-      messages,
+      messages: messages.map((m) =>
+        m.images?.length && m.contentParts
+          ? { role: m.role, content: m.contentParts }
+          : m,
+      ),
       temperature: opts.temperature ?? 0.4,
       max_tokens: opts.maxTokens ?? 400,
       stream: false,
@@ -179,7 +194,205 @@ export async function llmChat(
   return content;
 }
 
-/** Ask the local LLM to pick a tool for the user's request (or null). */
+export interface VisionTarget {
+  description: string;
+  x: number;
+  y: number;
+}
+
+/**
+ * Ask the vision model to locate something on a screenshot.
+ * Uses Ollama's image input (base64) or the OpenAI-compatible image_url part.
+ * Returns the target's pixel coordinates (scaled to full screen size).
+ */
+export async function visionLocate(
+  cfg: LlmConfig,
+  imageDataUri: string,
+  screenW: number,
+  screenH: number,
+  description: string,
+): Promise<{ target?: VisionTarget; raw?: string; error?: string }> {
+  const vision = cfg.visionModel?.trim() || cfg.model;
+  const url = normalizeUrl(cfg.url);
+  const instr = `You are the vision system of a computer-control assistant. Locate: "${description}".
+The image is a full screenshot, ${screenW}x${screenH} pixels.
+Reply with ONLY a JSON object, nothing else:
+{"x":<center x of the target>,"y":<center y of the target>,"description":"<what you found>"}
+If the target is not visible, reply with {"notfound":true}`;
+  try {
+    let reply: string;
+    if (cfg.provider === "ollama") {
+      const b64 = imageDataUri.replace(/^data:[^,]+,/, "");
+      const data = await fetchJson(
+        `${url}/api/chat`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: vision,
+            messages: [{ role: "user", content: instr, images: [b64] }],
+            stream: false,
+            options: { temperature: 0, num_predict: 120 },
+          }),
+        },
+        120000,
+      );
+      reply = (data as { message?: { content?: string } }).message?.content ?? "";
+    } else {
+      const data = await fetchJson(
+        `${url}/v1/chat/completions`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: vision,
+            messages: [
+              {
+                role: "user",
+                content: [
+                  { type: "text", text: instr },
+                  { type: "image_url", image_url: { url: imageDataUri } },
+                ],
+              },
+            ],
+            max_tokens: 120,
+            stream: false,
+          }),
+        },
+        120000,
+      );
+      reply =
+        (data as { choices?: { message?: { content?: string } }[] })
+          .choices?.[0]?.message?.content ?? "";
+    }
+    const fenced = reply.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const candidate = (fenced ? fenced[1] : reply).trim();
+    const start = candidate.indexOf("{");
+    const end = candidate.lastIndexOf("}");
+    if (start === -1 || end === -1) return { raw: reply, error: "No JSON in vision reply." };
+    const obj = JSON.parse(candidate.slice(start, end + 1)) as {
+      x?: number;
+      y?: number;
+      description?: string;
+      notfound?: boolean;
+    };
+    if (obj.notfound || typeof obj.x !== "number" || typeof obj.y !== "number") {
+      return { raw: reply, error: `I couldn't find "${description}" on screen.` };
+    }
+    // Model may answer in a 0-1000 normalized space — scale if clearly out of bounds.
+    let x = obj.x;
+    let y = obj.y;
+    if (x > screenW || y > screenH) {
+      x = Math.round((x / 1000) * screenW);
+      y = Math.round((y / 1000) * screenH);
+    }
+    return {
+      target: {
+        x: Math.max(0, Math.min(screenW - 1, Math.round(x))),
+        y: Math.max(0, Math.min(screenH - 1, Math.round(y))),
+        description: obj.description ?? description,
+      },
+      raw: reply,
+    };
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : "Vision request failed.",
+    };
+  }
+}
+
+/** Ask the model to return a point sequence (a stroke) for drawing tasks. */
+export async function visionPath(
+  cfg: LlmConfig,
+  imageDataUri: string,
+  screenW: number,
+  screenH: number,
+  description: string,
+): Promise<{ points?: { x: number; y: number }[]; error?: string }> {
+  const vision = cfg.visionModel?.trim() || cfg.model;
+  const url = normalizeUrl(cfg.url);
+  const instr = `You control a mouse to draw on screen. Task: ${description}
+The image is a screenshot, ${screenW}x${screenH} pixels.
+Reply with ONLY JSON: {"points":[{"x":..,"y":..}, ...]} — 8 to 40 points tracing the desired stroke, full-screen pixel coordinates.
+If the request is unclear, reply {"notfound":true}`;
+  try {
+    let reply: string;
+    if (cfg.provider === "ollama") {
+      const b64 = imageDataUri.replace(/^data:[^,]+,/, "");
+      const data = await fetchJson(
+        `${url}/api/chat`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: vision,
+            messages: [{ role: "user", content: instr, images: [b64] }],
+            stream: false,
+            options: { temperature: 0.2, num_predict: 800 },
+          }),
+        },
+        120000,
+      );
+      reply = (data as { message?: { content?: string } }).message?.content ?? "";
+    } else {
+      const data = await fetchJson(
+        `${url}/v1/chat/completions`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: vision,
+            messages: [
+              {
+                role: "user",
+                content: [
+                  { type: "text", text: instr },
+                  { type: "image_url", image_url: { url: imageDataUri } },
+                ],
+              },
+            ],
+            max_tokens: 800,
+            stream: false,
+          }),
+        },
+        120000,
+      );
+      reply =
+        (data as { choices?: { message?: { content?: string } }[] })
+          .choices?.[0]?.message?.content ?? "";
+    }
+    const fenced = reply.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const candidate = (fenced ? fenced[1] : reply).trim();
+    const start = candidate.indexOf("{");
+    const end = candidate.lastIndexOf("}");
+    if (start === -1 || end === -1) return { error: "No JSON in vision reply." };
+    const obj = JSON.parse(candidate.slice(start, end + 1)) as {
+      points?: { x: number; y: number }[];
+      notfound?: boolean;
+    };
+    if (obj.notfound || !Array.isArray(obj.points) || obj.points.length < 2) {
+      return { error: `I couldn't work out a path for "${description}".` };
+    }
+    const pts = obj.points
+      .filter((p) => typeof p?.x === "number" && typeof p?.y === "number")
+      .map((p) => {
+        let x = p.x;
+        let y = p.y;
+        if (x > screenW || y > screenH) {
+          x = (x / 1000) * screenW;
+          y = (y / 1000) * screenH;
+        }
+        return {
+          x: Math.max(0, Math.min(screenW - 1, Math.round(x))),
+          y: Math.max(0, Math.min(screenH - 1, Math.round(y))),
+        };
+      });
+    if (pts.length < 2) return { error: "Vision returned too few points." };
+    return { points: pts };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Vision request failed." };
+  }
+}
 export async function planToolCall(
   cfg: LlmConfig,
   userMessage: string,

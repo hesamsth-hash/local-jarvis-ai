@@ -175,6 +175,54 @@ export function ModelSettings({
         </div>
       )}
 
+      {/* Vision model — powers See & Act */}
+      {status === "online" && (
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium">
+            Vision model{" "}
+            <span className="font-normal text-muted-foreground">
+              (for See &amp; Act — optional)
+            </span>
+          </p>
+          {models.length > 0 ? (
+            <Select
+              value={config.visionModel || "none"}
+              onValueChange={(v) =>
+                onChange({ ...config, visionModel: v === "none" ? "" : v })
+              }
+            >
+              <SelectTrigger className="w-full text-xs">
+                <SelectValue placeholder="None — See & Act off" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none" className="text-xs">
+                  None — See &amp; Act off
+                </SelectItem>
+                {models.map((m) => (
+                  <SelectItem key={m.id} value={m.id} className="text-xs">
+                    {m.id}
+                    {m.size ? ` · ${m.size}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              value={config.visionModel ?? ""}
+              onChange={(e) => onChange({ ...config, visionModel: e.target.value })}
+              placeholder="vision model (e.g. llava, llama3.2-vision) — blank to disable"
+              className="h-9 font-mono text-xs"
+              spellCheck={false}
+            />
+          )}
+          <p className="text-[10px] leading-snug text-muted-foreground">
+            A vision-capable model (Ollama: <span className="font-mono">ollama pull llava</span> or{" "}
+            <span className="font-mono">llama3.2-vision</span>) lets JARVIS look at screenshots
+            and click, drag or draw on what it finds.
+          </p>
+        </div>
+      )}
+
       {status === "offline" && (
         <div className="rounded-lg bg-amber-500/10 p-3 text-[11px] leading-relaxed text-amber-700 ring-1 ring-amber-500/20 dark:text-amber-400">
           Couldn't reach the server. Is it running? If it's on another machine,

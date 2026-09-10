@@ -489,6 +489,7 @@ export function useJarvis() {
       connectFolder,
       connected: connectedRef.current,
       desktop: isDesktop(),
+      llm: llmRef.current,
     }),
     [capture, notify, connectFolder, openExternal],
   );

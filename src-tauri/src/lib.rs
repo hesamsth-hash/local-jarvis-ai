@@ -144,6 +144,86 @@ fn mouse_scroll(state: tauri::State<'_, InputState>, amount: i32) -> Result<Stri
 }
 
 #[tauri::command]
+fn mouse_double_click(state: tauri::State<'_, InputState>) -> Result<String, String> {
+    use enigo::{Button, Direction};
+    with_input(&state, |enigo| {
+        enigo.button(Button::Left, Direction::Click).map_err(|e| e.to_string())?;
+        std::thread::sleep(std::time::Duration::from_millis(60));
+        enigo.button(Button::Left, Direction::Click).map_err(|e| e.to_string())?;
+        Ok("Double clicked.".into())
+    })
+}
+
+/// Press, move smoothly, release — used for drags and drawing strokes.
+#[tauri::command]
+fn mouse_drag(
+    state: tauri::State<'_, InputState>,
+    from_x: i32,
+    from_y: i32,
+    to_x: i32,
+    to_y: i32,
+    steps: Option<i32>,
+) -> Result<String, String> {
+    use enigo::{Button, Direction};
+    let steps = steps.unwrap_or(25).clamp(2, 200);
+    with_input(&state, |enigo| {
+        enigo
+            .move_mouse(from_x, from_y, enigo::Coordinate::Abs)
+            .map_err(|e| e.to_string())?;
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        enigo
+            .button(Button::Left, Direction::Press)
+            .map_err(|e| e.to_string())?;
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        for i in 1..=steps {
+            let t = i as f32 / steps as f32;
+            let x = from_x + ((to_x - from_x) as f32 * t) as i32;
+            let y = from_y + ((to_y - from_y) as f32 * t) as i32;
+            enigo
+                .move_mouse(x, y, enigo::Coordinate::Abs)
+                .map_err(|e| e.to_string())?;
+            std::thread::sleep(std::time::Duration::from_millis(12));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        enigo
+            .button(Button::Left, Direction::Release)
+            .map_err(|e| e.to_string())?;
+        Ok(format!("Dragged ({from_x},{from_y}) → ({to_x},{to_y})."))
+    })
+}
+
+/// Press at the first point, trace every point, release — freehand drawing.
+#[tauri::command]
+fn mouse_draw(state: tauri::State<'_, InputState>, points: Vec<(i32, i32)>) -> Result<String, String> {
+    use enigo::{Button, Direction};
+    if points.len() < 2 {
+        return Err("need at least 2 points".into());
+    }
+    with_input(&state, |enigo| {
+        let (sx, sy) = points[0];
+        enigo
+            .move_mouse(sx, sy, enigo::Coordinate::Abs)
+            .map_err(|e| e.to_string())?;
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        enigo
+            .button(Button::Left, Direction::Press)
+            .map_err(|e| e.to_string())?;
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        for (x, y) in points.iter().skip(1) {
+            enigo
+                .move_mouse(*x, *y, enigo::Coordinate::Abs)
+                .map_err(|e| e.to_string())?;
+            std::thread::sleep(std::time::Duration::from_millis(12));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        enigo
+            .button(Button::Left, Direction::Release)
+            .map_err(|e| e.to_string())?;
+        Ok(format!("Drew a path through {} points.", points.len()))
+    })
+}
+
+#[tauri::command]
 fn key_press(state: tauri::State<'_, InputState>, key: String) -> Result<String, String> {
     use enigo::Key;
     with_input(&state, |enigo| {
@@ -296,6 +376,64 @@ fn desktop_status() -> String {
     "desktop-bridge-online".to_string()
 }
 
+/// Display size in the same coordinate space `mouse_move` (Abs) uses —
+/// lets the frontend scale screenshot pixels to cursor coordinates exactly.
+#[derive(Serialize)]
+pub struct ScreenMetrics {
+    width: i32,
+    height: i32,
+}
+
+#[tauri::command]
+fn screen_metrics(state: tauri::State<'_, InputState>) -> Result<ScreenMetrics, String> {
+    with_input(&state, |enigo| {
+        let (width, height) = enigo
+            .main_display()
+            .map_err(|e| format!("display query failed: {e}"))?;
+        Ok(ScreenMetrics { width, height })
+    })
+}
+
+/// Launch ANY program, script or file by name or absolute path — not limited
+/// to the open_app mapping. Falls back to the platform shell so PATH entries,
+/// documents and folders resolve too.
+#[tauri::command]
+fn execute_command(command: String, args: Option<Vec<String>>) -> OkMsg {
+    let arglist = args.unwrap_or_default();
+    let direct = std::process::Command::new(&command).args(&arglist).spawn();
+    match direct {
+        Ok(child) => OkMsg {
+            ok: true,
+            message: format!("Launched {} (PID {}).", command, child.id()),
+        },
+        Err(direct_err) => {
+            let mut line = command.clone();
+            for a in &arglist {
+                line.push(' ');
+                line.push_str(a);
+            }
+            #[cfg(target_os = "windows")]
+            let shell = std::process::Command::new("cmd")
+                .args(["/C", "start", "", &line])
+                .spawn();
+            #[cfg(not(target_os = "windows"))]
+            let shell = std::process::Command::new("sh")
+                .args(["-c", &format!("exec {line} >/dev/null 2>&1 &")])
+                .spawn();
+            match shell {
+                Ok(_) => OkMsg {
+                    ok: true,
+                    message: format!("Launched {command} via shell."),
+                },
+                Err(e) => OkMsg {
+                    ok: false,
+                    message: format!("Couldn't launch {command}: {direct_err} / shell: {e}"),
+                },
+            }
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -307,14 +445,19 @@ pub fn run() {
             system_info_stream,
             mouse_move,
             mouse_click,
+            mouse_double_click,
             mouse_scroll,
+            mouse_drag,
+            mouse_draw,
             key_press,
             type_text,
             desktop_picture,
             launch_app,
             open_url,
+            execute_command,
             notify,
-            desktop_status
+            desktop_status,
+            screen_metrics
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
