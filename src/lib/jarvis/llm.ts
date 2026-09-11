@@ -81,6 +81,14 @@ export const PRESETS: {
     hint: "paste your Groq API key below — free tier, extremely fast",
     cloud: true,
   },
+  {
+    id: "openrouter",
+    label: "OpenRouter ☁ cloud",
+    provider: "openai-compatible",
+    url: "https://openrouter.ai/api/v1",
+    hint: "one key, 200+ models incl. free GLM/DeepSeek (ids ending in :free) — key from openrouter.ai/keys",
+    cloud: true,
+  },
 ];
 
 export interface ModelInfo {
