@@ -2,43 +2,6 @@
 
 import { toPng } from "./app-icon";
 
-const SW_SOURCE = `
-const CACHE = "jarvis-v1";
-const CORE = ["/", "/index.html"];
-self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(CORE)).then(() => self.skipWaiting()));
-});
-self.addEventListener("activate", (e) => {
-  e.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-    ).then(() => self.clients.claim())
-  );
-});
-self.addEventListener("fetch", (event) => {
-  const req = event.request;
-  if (req.method !== "GET") return;
-  const url = new URL(req.url);
-  if (url.origin !== self.location.origin) return; // never touch cross-origin (Convex, models, fonts)
-  if (url.pathname.startsWith("/api/")) return;
-  event.respondWith(
-    fetch(req)
-      .then((res) => {
-        if (res.ok && (req.destination === "document" || req.destination === "script" || req.destination === "style")) {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy));
-        }
-        return res;
-      })
-      .catch(() =>
-        req.destination === "document"
-          ? caches.match("/index.html")
-          : caches.match(req)
-      )
-  );
-});
-`;
-
 export function initPwa(): void {
   if (typeof window === "undefined") return;
 
@@ -85,12 +48,22 @@ export function initPwa(): void {
     }
   })();
 
-  // 2. Register the offline shell service worker
+  // 2. Offline shell service worker — production only. The dev server serves
+  // unbundled modules whose URLs change on every re-optimization; caching them
+  // breaks lazy route imports ("Failed to fetch dynamically imported module").
+  // In dev, instead unregister anything a previous session registered and
+  // drop our cache (never touches the transformers.js model caches).
   if ("serviceWorker" in navigator) {
-    const blob = new Blob([SW_SOURCE], { type: "text/javascript" });
-    const url = URL.createObjectURL(blob);
-    navigator.serviceWorker.register(url).catch(() => {
-      // SW is progressive enhancement; ignore failures (e.g. dev iframe)
-    });
+    if (import.meta.env.DEV) {
+      void navigator.serviceWorker
+        .getRegistrations()
+        .then((regs) => Promise.all(regs.map((r) => r.unregister())))
+        .then(() => ("caches" in window ? caches.delete("jarvis-v1") : undefined))
+        .catch(() => {});
+    } else {
+      navigator.serviceWorker.register("/sw.js").catch(() => {
+        // SW is progressive enhancement; ignore failures (e.g. dev iframe)
+      });
+    }
   }
 }
