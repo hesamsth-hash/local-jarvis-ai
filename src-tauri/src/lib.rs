@@ -254,7 +254,9 @@ fn key_press(state: tauri::State<'_, InputState>, key: String) -> Result<String,
             ("medianext", Key::MediaNextTrack),
             ("mediaprev", Key::MediaPrevTrack),
             ("mediaplaypause", Key::MediaPlayPause),
-            ("printscreen", Key::PrintScr),
+            // enigo 0.2.1 has no PrintScr variant; VK_SNAPSHOT (0x2C) is the
+            // documented Windows virtual key for PrintScreen via Key::Other.
+            ("printscreen", Key::Other(0x2C)),
             ("insert", Key::Insert),
             ("capslock", Key::CapsLock),
             ("numlock", Key::Numlock),
