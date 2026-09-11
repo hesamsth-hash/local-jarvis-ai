@@ -42,12 +42,15 @@ export function ModelSettings({
   onTest,
 }: ModelSettingsProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const preset = PRESETS.find((p) => p.provider === config.provider);
+  const preset =
+    PRESETS.find((p) => p.id === config.presetId) ??
+    PRESETS.find((p) => p.provider === config.provider && !p.cloud) ??
+    PRESETS[0];
 
   const applyPreset = (id: string) => {
     const p = PRESETS.find((x) => x.id === id);
     if (!p) return;
-    onChange({ ...config, provider: p.provider, url: p.url, model: "" });
+    onChange({ ...config, provider: p.provider, url: p.url, model: "", presetId: p.id });
   };
 
   return (
@@ -125,7 +128,25 @@ export function ModelSettings({
           {status === "online" ? "Online" : "Test"}
         </Button>
       </div>
-      {preset && (
+      {/* Cloud API key (Fireworks / Groq / any OpenAI-compatible cloud) */}
+      {preset?.cloud && (
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium">API key</p>
+          <Input
+            type="password"
+            value={config.apiKey ?? ""}
+            onChange={(e) => onChange({ ...config, apiKey: e.target.value })}
+            placeholder="paste your key — stored on this device only"
+            className="h-9 font-mono text-xs"
+            spellCheck={false}
+          />
+          <p className="text-[10px] leading-snug text-muted-foreground">
+            {preset.hint}. Requests go straight from this device to the provider —
+            the key never touches any server of ours.
+          </p>
+        </div>
+      )}
+      {preset && !preset.cloud && (
         <p className="font-mono text-[10px] text-muted-foreground">
           setup: {preset.hint}
         </p>
@@ -225,8 +246,9 @@ export function ModelSettings({
 
       {status === "offline" && (
         <div className="rounded-lg bg-amber-500/10 p-3 text-[11px] leading-relaxed text-amber-700 ring-1 ring-amber-500/20 dark:text-amber-400">
-          Couldn't reach the server. Is it running? If it's on another machine,
-          make sure CORS is allowed (e.g. OLLAMA_ORIGINS=*).
+          {preset?.cloud && !config.apiKey?.trim()
+            ? "Paste your API key first, then hit Test."
+            : "Couldn't reach the server. Is it running? If it's on another machine, make sure CORS is allowed (e.g. OLLAMA_ORIGINS=*). For cloud presets, check the key is valid."}
         </div>
       )}
 

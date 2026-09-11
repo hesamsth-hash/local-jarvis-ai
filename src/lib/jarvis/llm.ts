@@ -12,6 +12,10 @@ export interface LlmConfig {
   model: string;
   /** Vision model for See & Act (e.g. llava, llama3.2-vision, qwen2-vl). Optional. */
   visionModel?: string;
+  /** API key for cloud OpenAI-compatible endpoints (Fireworks, Groq, OpenRouter…). */
+  apiKey?: string;
+  /** Which preset chip is active (for the UI hint line). */
+  presetId?: string;
 }
 
 export const DEFAULT_LLM_CONFIG: LlmConfig = {
@@ -20,6 +24,8 @@ export const DEFAULT_LLM_CONFIG: LlmConfig = {
   url: "http://localhost:11434",
   model: "",
   visionModel: "",
+  apiKey: "",
+  presetId: "ollama",
 };
 
 export const PRESETS: {
@@ -28,6 +34,8 @@ export const PRESETS: {
   provider: LlmProviderKind;
   url: string;
   hint: string;
+  /** Cloud endpoint — needs an API key instead of a local server. */
+  cloud?: boolean;
 }[] = [
   {
     id: "ollama",
@@ -57,6 +65,22 @@ export const PRESETS: {
     url: "http://localhost:8080",
     hint: "llama-server --port 8080",
   },
+  {
+    id: "fireworks",
+    label: "Fireworks ⚡ cloud",
+    provider: "openai-compatible",
+    url: "https://api.fireworks.ai/inference/v1",
+    hint: "paste your Fireworks API key below — fastest hosted open-source models",
+    cloud: true,
+  },
+  {
+    id: "groq",
+    label: "Groq ⚡ cloud",
+    provider: "openai-compatible",
+    url: "https://api.groq.com/openai/v1",
+    hint: "paste your Groq API key below — free tier, extremely fast",
+    cloud: true,
+  },
 ];
 
 export interface ModelInfo {
@@ -82,13 +106,23 @@ export function normalizeUrl(url: string): string {
   return url.replace(/\/+$/, "");
 }
 
+/** Base without a trailing /v1 so we can append /v1/... exactly once. */
+function apiBase(url: string): string {
+  return normalizeUrl(url).replace(/\/v1$/, "");
+}
+
+/** Bearer auth header for cloud OpenAI-compatible endpoints. */
+function authHeaders(cfg: LlmConfig): Record<string, string> {
+  return cfg.apiKey?.trim() ? { Authorization: `Bearer ${cfg.apiKey.trim()}` } : {};
+}
+
 /** Ping the configured server; returns true if reachable. */
 export async function testConnection(cfg: LlmConfig): Promise<boolean> {
   try {
     if (cfg.provider === "ollama") {
-      await fetchJson(`${normalizeUrl(cfg.url)}/api/tags`, undefined, 4000);
+      await fetchJson(`${normalizeUrl(cfg.url)}/api/tags`, { headers: authHeaders(cfg) }, 4000);
     } else {
-      await fetchJson(`${normalizeUrl(cfg.url)}/v1/models`, undefined, 4000);
+      await fetchJson(`${apiBase(cfg.url)}/v1/models`, { headers: authHeaders(cfg) }, 4000);
     }
     return true;
   } catch {
@@ -99,7 +133,7 @@ export async function testConnection(cfg: LlmConfig): Promise<boolean> {
 /** List models available on the server. */
 export async function listModels(cfg: LlmConfig): Promise<ModelInfo[]> {
   if (cfg.provider === "ollama") {
-    const data = await fetchJson(`${normalizeUrl(cfg.url)}/api/tags`);
+    const data = await fetchJson(`${normalizeUrl(cfg.url)}/api/tags`, { headers: authHeaders(cfg) });
     const models = (data as { models?: { name: string; size?: number }[] })
       .models ?? [];
     return models.map((m) => ({
@@ -107,7 +141,7 @@ export async function listModels(cfg: LlmConfig): Promise<ModelInfo[]> {
       size: m.size ? `${(m.size / 1e9).toFixed(1)} GB` : undefined,
     }));
   }
-  const data = await fetchJson(`${normalizeUrl(cfg.url)}/v1/models`);
+  const data = await fetchJson(`${apiBase(cfg.url)}/v1/models`, { headers: authHeaders(cfg) });
   const models = (data as { data?: { id: string }[] }).data ?? [];
   return models.map((m) => ({ id: m.id }));
 }
@@ -158,7 +192,7 @@ export async function llmChat(
   if (cfg.provider === "ollama") {
     const data = await fetchJson(`${url}/api/chat`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders(cfg) },
       body: JSON.stringify({
         model: cfg.model,
         messages,
@@ -174,9 +208,9 @@ export async function llmChat(
     if (!content) throw new Error("Empty response from Ollama");
     return content;
   }
-  const data = await fetchJson(`${url}/v1/chat/completions`, {
+  const data = await fetchJson(`${apiBase(url)}/v1/chat/completions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders(cfg) },
     body: JSON.stringify({
       model: cfg.model || "local-model",
       messages: messages.map((m) =>
@@ -215,7 +249,7 @@ export async function visionLocate(
   description: string,
 ): Promise<{ target?: VisionTarget; raw?: string; error?: string }> {
   const vision = cfg.visionModel?.trim() || cfg.model;
-  const url = normalizeUrl(cfg.url);
+  const url = apiBase(cfg.url);
   const instr = `You are the vision system of a computer-control assistant. Locate: "${description}".
 The image is a full screenshot, ${screenW}x${screenH} pixels.
 Reply with ONLY a JSON object, nothing else:
@@ -245,7 +279,7 @@ If the target is not visible, reply with {"notfound":true}`;
         `${url}/v1/chat/completions`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders(cfg) },
           body: JSON.stringify({
             model: vision,
             messages: [
@@ -312,7 +346,7 @@ export async function visionPath(
   description: string,
 ): Promise<{ points?: { x: number; y: number }[]; error?: string }> {
   const vision = cfg.visionModel?.trim() || cfg.model;
-  const url = normalizeUrl(cfg.url);
+  const url = apiBase(cfg.url);
   const instr = `You control a mouse to draw on screen. Task: ${description}
 The image is a screenshot, ${screenW}x${screenH} pixels.
 Reply with ONLY JSON: {"points":[{"x":..,"y":..}, ...]} — 8 to 40 points tracing the desired stroke, full-screen pixel coordinates.
@@ -341,7 +375,7 @@ If the request is unclear, reply {"notfound":true}`;
         `${url}/v1/chat/completions`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders(cfg) },
           body: JSON.stringify({
             model: vision,
             messages: [
