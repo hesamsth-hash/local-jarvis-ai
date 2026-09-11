@@ -27,6 +27,13 @@ import {
   type ModelInfo,
 } from "@/lib/jarvis/llm";
 import type { ToolContext, ToolResult } from "@/lib/jarvis/tools";
+import {
+  listPlugins,
+  removePlugin,
+  setPluginNotifier,
+  syncPluginTools,
+  type PluginSpec,
+} from "@/lib/jarvis/plugins";
 import { isDesktop } from "@/lib/jarvis/desktop-bridge";
 import type {
   ChatMessage,
@@ -80,6 +87,7 @@ export function useJarvis() {
 
   // Tools
   const [disabledTools, setDisabledTools] = useState<string[]>([]);
+  const [plugins, setPlugins] = useState<PluginSpec[]>([]);
   const [media, setMedia] = useState<{
     stream: MediaStream;
     kind: "screen" | "camera";
@@ -118,6 +126,17 @@ export function useJarvis() {
       // ignore
     }
   }, [llm]);
+
+  // ---------- self-installed plugins ----------
+  const refreshPlugins = useCallback(() => {
+    void listPlugins().then(setPlugins);
+  }, []);
+
+  useEffect(() => {
+    setPluginNotifier(notify);
+    void syncPluginTools().then(refreshPlugins);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ---------- engine loading ----------
   const loadEngines = useCallback(() => {
@@ -624,6 +643,13 @@ export function useJarvis() {
     );
   }, []);
 
+  const uninstallPlugin = useCallback(
+    (id: string) => {
+      void removePlugin(id).then(refreshPlugins);
+    },
+    [refreshPlugins],
+  );
+
   const openEntry = useCallback(
     (entry: FsEntryView) => {
       if (entry.kind === "directory") {
@@ -668,6 +694,7 @@ export function useJarvis() {
     llm, setLlm, llmStatus, models, handleTestLlm,
     // tools
     disabledTools, toggleTool,
+    plugins, uninstallPlugin,
     media, closeMedia,
   };
 }

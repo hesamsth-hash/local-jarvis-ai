@@ -252,6 +252,8 @@ export default function Dashboard() {
               <PluginBay
                 disabledTools={jarvis.disabledTools}
                 onToggleTool={jarvis.toggleTool}
+                plugins={jarvis.plugins}
+                onRemovePlugin={jarvis.uninstallPlugin}
               />
             </TabsContent>
             <TabsContent value="files" className="h-[420px] px-0 pb-3">

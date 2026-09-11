@@ -119,7 +119,9 @@ When a task matches one of your tools, reply with EXACTLY one JSON object and no
 Available tools and their args:
 {TOOLS}
 After the JSON you will receive a tool result as a user message starting with [TOOL_RESULT]; then answer the user in plain text using that result.
-If no tool is needed, just answer in plain text.`;
+If no tool is needed, just answer in plain text.
+
+SELF-EXTENSION: if the user asks for something NO existing tool can do, and it can be done with a fetch/open/notify, do NOT refuse and do NOT say you lack the capability — instead create the tool right now by replying with a make_tool JSON call. Write compact sandboxed JS; the code is the body of async (args, jv) and must return the result string. Use jv.fetchJson/jv.fetchText/jv.open/jv.notify. After installing, tell the user the tool is ready. If the task needs a real program that is not installed (desktop), you may offer install_tool with the right winget package id.`;
 
 export interface LlmMessage {
   role: "system" | "user" | "assistant";

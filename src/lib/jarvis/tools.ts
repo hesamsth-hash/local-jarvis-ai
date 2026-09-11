@@ -658,7 +658,143 @@ export const TOOLS: JarvisTool[] = [
     argHint: "minutes + text",
     handler: async (arg, ctx) => ctx.sub("checkin", arg),
   },
+
+  // ============ SELF-EXTENSION (meta tools) ============
+  {
+    id: "make_tool",
+    name: "Make Tool",
+    category: "utilities",
+    description:
+      "Lets JARVIS write and install a brand-new tool at runtime when none of the existing tools fit.",
+    llmDescription:
+      'CREATE A NEW TOOL when no existing tool can do the job — writes sandboxed JS that runs with jv.fetchJson(url, init?), jv.fetchText, jv.open(url), jv.notify(title, body), jv.desktop, jv.desktopCommand(cmd, payload). args JSON: {"name":"...", "description":"...", "argHint":"...", "code":"return jv.fetchJson(...).then(...)"}. The code is the BODY of an async (args, jv) function and must RETURN a string or object with the result. Prefer small, focused tools; the tool is instantly available for future requests.',
+    argHint: 'JSON: name, description, argHint, code',
+    handler: async (arg, ctx) => {
+      const { savePlugin } = await import("./plugins");
+      const parsed = tryParsePluginSpec(String(arg));
+      if (!parsed)
+        return {
+          ok: false,
+          data:
+            'make_tool needs JSON with name, description and code — e.g. {"name":"HN Top","description":"Fetch top Hacker News stories","argHint":"number of stories","code":"const d = await jv.fetchJson(\\\"https://hacker-news.firebaseio.com/v0/topstories.json\\\"); const ids = d.slice(0, Number(args) || 5); const stories = await Promise.all(ids.map(i => jv.fetchJson(\\\"https://hacker-news.firebaseio.com/v0/item/\\\" + i + \\\".json\\\"))); return stories.map(s => s.title + \\\" — \\\" + s.url).join(\\\"\\\\n\\\");"}',
+        };
+      const r = await savePlugin({ ...parsed, source: "jarvis" });
+      if (r.ok) ctx.notify("JARVIS installed a new tool", parsed.name);
+      return r;
+    },
+  },
+  {
+    id: "list_plugins",
+    name: "Installed Tools",
+    category: "utilities",
+    description: "Lists the custom tools JARVIS (or you) have installed.",
+    llmDescription: "list the custom plugins/tools that have been installed at runtime",
+    argHint: "",
+    handler: async () => {
+      const { listPlugins } = await import("./plugins");
+      const plugins = await listPlugins();
+      if (!plugins.length)
+        return { ok: true, data: "No custom tools installed yet. Use make_tool to create one." };
+      return {
+        ok: true,
+        data: plugins
+          .map((p) => `• ${p.name} (${p.id}) — ${p.description}`)
+          .join("\n"),
+      };
+    },
+  },
+  {
+    id: "remove_tool",
+    name: "Remove Tool",
+    category: "utilities",
+    description: "Uninstalls a custom tool that was added at runtime.",
+    llmDescription:
+      'uninstall a previously created plugin — args: the plugin id (e.g. "hn-top")',
+    argHint: "plugin id",
+    handler: async (arg) => {
+      const { removePlugin, listPlugins } = await import("./plugins");
+      const id = arg.trim().replace(/^plugin\./, "");
+      const all = await listPlugins();
+      if (!all.some((p) => p.id === id))
+        return {
+          ok: false,
+          data: `No plugin called "${id}". Installed: ${all.map((p) => p.id).join(", ") || "none"}.`,
+        };
+      await removePlugin(id);
+      return { ok: true, data: `Tool "${id}" removed.` };
+    },
+  },
+  {
+    id: "install_tool",
+    name: "Install Software",
+    category: "system",
+    description:
+      "Installs a real Windows program via winget (desktop app) — JARVIS sets it up itself.",
+    llmDescription:
+      'install a real program on Windows via the winget package manager so a new capability becomes available — args: package name or id, e.g. "7zip.7zip", "Python.Python.3.12", "GIMP.GIMP". Only offer this when the user agrees to install software. Desktop app only.',
+    argHint: "winget package id",
+    handler: async (arg) => {
+      const pkg = arg.trim();
+      if (!pkg)
+        return { ok: false, data: "Give me a winget package id or name, e.g. \"7zip.7zip\"." };
+      const { isDesktop, desktopExecute } = await import("./desktop-bridge");
+      if (!isDesktop()) {
+        return {
+          ok: false,
+          data: "Installing software needs the desktop app (winget is a Windows command).",
+        };
+      }
+      const r = await desktopExecute("winget", [
+        "install",
+        "--id",
+        pkg,
+        "--silent",
+        "--accept-package-agreements",
+        "--accept-source-agreements",
+      ]);
+      if (r && !r.startsWith("Execute failed") && !r.startsWith("Couldn't")) {
+        return {
+          ok: true,
+          data: `Installing ${pkg} with winget in the background. I'll be able to use it once setup finishes — try again in a minute or two.`,
+        };
+      }
+      return {
+        ok: false,
+        data:
+          (r ?? "") + " — winget may not be available; open a terminal and run: winget install " + pkg,
+      };
+    },
+  },
 ];
+
+/** Parse a make_tool spec out of the model's args (tolerates fenced JSON). */
+function tryParsePluginSpec(
+  raw: string,
+): { name: string; description: string; argHint?: string; code: string } | null {
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const candidate = (fenced ? fenced[1] : raw).trim();
+  const start = candidate.indexOf("{");
+  const end = candidate.lastIndexOf("}");
+  if (start === -1 || end <= start) return null;
+  try {
+    const obj = JSON.parse(candidate.slice(start, end + 1)) as {
+      name?: unknown;
+      description?: unknown;
+      argHint?: unknown;
+      code?: unknown;
+    };
+    if (typeof obj.name !== "string" || typeof obj.code !== "string") return null;
+    return {
+      name: obj.name,
+      description:
+        typeof obj.description === "string" ? obj.description : `Custom tool: ${obj.name}`,
+      argHint: typeof obj.argHint === "string" ? obj.argHint : undefined,
+      code: obj.code,
+    };
+  } catch {
+    return null;
+  }
+}
 
 export function toolsForLlm(): ToolSpecLike[] {
   return TOOLS.map((t) => ({

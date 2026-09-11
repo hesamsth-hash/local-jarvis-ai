@@ -62,6 +62,8 @@ With a local LLM connected (Ollama / Kobold / LM Studio) you also get:
 • System monitor, screen & camera capture, app launching
 • Code review, developer agent, file processing
 • Reminders, messages, flights, game launchers, background monitors, check-ins
+• I can BUILD new tools on the fly — if I'm missing a capability, say so and
+  I'll write + install a small plugin for it right now ("make me a tool that …")
 
 Connect one in the Brain tab → I'll route your requests through your own model.`;
 
@@ -291,8 +293,8 @@ export async function runBrain(
   // ---------- fallback ----------
   return {
     reply: deps.llmReady
-      ? "I couldn't map that to a tool. Try naming the capability, e.g. \"weather in Berlin\", \"search quantum computing\", \"screen\", or \"remind me in 20 minutes to stretch\"."
-      : 'I\'m in offline intent mode right now — try "help" for my skills, or connect a local LLM in the Brain tab (Ollama / Kobold / LM Studio) to unlock search, weather, code review and more.',
+      ? 'I couldn\'t map that to a tool. Try naming the capability, e.g. "weather in Berlin", "search quantum computing", "screen", or "remind me in 20 minutes to stretch" — or say "make me a tool that …" and I\'ll build one for it.'
+      : 'I\'m in offline intent mode right now — try "help" for my skills, or connect a local LLM in the Brain tab (Ollama / Kobold / LM Studio) to unlock search, weather, code review, self-installed tools and more.',
     intent: "unknown",
     ok: true,
   };
