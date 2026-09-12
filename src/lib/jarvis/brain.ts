@@ -54,6 +54,7 @@ Offline (no LLM needed):
 • "connect folder" — pick a workspace folder on your machine
 • "list files" / "read <file>" / "write <file> with <text>" — file tools
 • "rename <a> to <b>" · "move <a> to <dir>" · "delete <path>" · "undo delete"
+• "remember that …" — persistent memory · "what do you remember?" · "forget …"
 • "speak <text>" — Kokoro voice · "start/stop listening" — Whisper
 • "time", "date", "status", "help"
 
@@ -152,6 +153,29 @@ export async function runBrain(
   const sayMatch = raw.match(/^(?:say|speak|read out|announce)\s+["“]?(.+?)["”]?$/i);
   if (sayMatch) {
     return { reply: sayMatch[1], intent: "tts.speak", tool: "kokoro-tts", ok: true };
+  }
+
+  // ---------- memory (offline, always available) ----------
+  const rememberMatch = raw.match(/^(?:remember|note)\s+(?:that\s+)?["“]?(.+?)["”]?$/i);
+  if (rememberMatch) {
+    const { remember } = await import("./memory");
+    const r = remember(rememberMatch[1], "fact");
+    return { reply: r.data, intent: "memory.remember", tool: "memory", ok: r.ok };
+  }
+  if (
+    /^(?:what(?:'s| is| do you) (?:in your )?memory|what do you remember|show memory|list memory|your memory)\b/.test(
+      text,
+    ) ||
+    /^memory$/i.test(text)
+  ) {
+    const { memorySummary } = await import("./memory");
+    return { reply: memorySummary(), intent: "memory.list", tool: "memory", ok: true };
+  }
+  const forgetMatch = raw.match(/^(?:forget|delete from memory|remove from memory)\s+(?:that\s+|about\s+)?["“]?(.+?)["”]?$/i);
+  if (forgetMatch) {
+    const { forget } = await import("./memory");
+    const r = forget(forgetMatch[1]);
+    return { reply: r.data, intent: "memory.forget", tool: "memory", ok: r.ok };
   }
 
   // ---------- LLM + tool registry tier ----------

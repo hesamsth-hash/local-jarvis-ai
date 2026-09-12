@@ -659,6 +659,47 @@ export const TOOLS: JarvisTool[] = [
     handler: async (arg, ctx) => ctx.sub("checkin", arg),
   },
 
+  // ============ MEMORY ============
+  {
+    id: "remember",
+    name: "Remember",
+    category: "utilities",
+    description: "Saves a fact to JARVIS's persistent local memory (survives restarts).",
+    llmDescription:
+      'save a durable fact about the user to persistent memory — args: the fact as a short sentence, e.g. "User\'s laptop is a Legion 5" or "User prefers short answers". Use this whenever the user shares lasting personal info.',
+    argHint: "fact to remember",
+    handler: async (arg) => {
+      const { remember } = await import("./memory");
+      return remember(arg, "fact");
+    },
+  },
+  {
+    id: "list_memory",
+    name: "Memory",
+    category: "utilities",
+    description: "Shows everything JARVIS remembers (stored only on this device).",
+    llmDescription:
+      'show what is in memory — actions: all (list everything), search <term>, or forget <term|all>',
+    argHint: "all | search <term> | forget <term>",
+    handler: async (arg) => {
+      const { recall, memorySummary, forget } = await import("./memory");
+      const a = arg.trim();
+      if (/^forget\b/i.test(a)) {
+        return forget(a.replace(/^forget\s*/i, ""));
+      }
+      if (/^(search|find)\b/i.test(a)) {
+        const hits = recall(a.replace(/^(search|find)\s*/i, ""));
+        return {
+          ok: true,
+          data: hits.length
+            ? `Found in memory:\n${hits.map((h) => `• ${h.text}`).join("\n")}`
+            : "Nothing in memory matches that.",
+        };
+        }
+      return { ok: true, data: memorySummary() };
+    },
+  },
+
   // ============ SELF-EXTENSION (meta tools) ============
   {
     id: "make_tool",
