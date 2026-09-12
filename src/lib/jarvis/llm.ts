@@ -3,6 +3,8 @@
 // (KoboldCpp, LM Studio, llama.cpp server, text-generation-webui...).
 // Everything stays on the machine: these are localhost HTTP endpoints.
 
+import { memoryPromptBlock } from "./memory";
+
 export type LlmProviderKind = "ollama" | "openai-compatible" | "pollinations";
 
 export interface LlmConfig {
@@ -202,11 +204,13 @@ You control tools on the user's device. Be concise and helpful (2-4 sentences un
 When a task matches one of your tools, reply with EXACTLY one JSON object and nothing else:
 {"tool":"<tool_id>","args":{...}}
 Available tools and their args:
-{TOOLS}
+{TOOLS}{MEMORY}
 After the JSON you will receive a tool result as a user message starting with [TOOL_RESULT]; then answer the user in plain text using that result.
 If no tool is needed, just answer in plain text.
 
-SELF-EXTENSION: if the user asks for something NO existing tool can do, and it can be done with a fetch/open/notify, do NOT refuse and do NOT say you lack the capability — instead create the tool right now by replying with a make_tool JSON call. Write compact sandboxed JS; the code is the body of async (args, jv) and must return the result string. Use jv.fetchJson/jv.fetchText/jv.open/jv.notify. After installing, tell the user the tool is ready. If the task needs a real program that is not installed (desktop), you may offer install_tool with the right winget package id.`;
+SELF-EXTENSION: if the user asks for something NO existing tool can do, and it can be done with a fetch/open/notify, do NOT refuse and do NOT say you lack the capability — instead create the tool right now by replying with a make_tool JSON call. Write compact sandboxed JS; the code is the body of async (args, jv) and must return the result string. Use jv.fetchJson/jv.fetchText/jv.open/jv.notify. After installing, tell the user the tool is ready. If the task needs a real program that is not installed (desktop), you may offer install_tool with the right winget package id.
+
+MEMORY: you have a persistent memory via the remember / list_memory / forget tools. When the user shares a durable personal fact (name, preferences, projects, devices, schedules), save it with remember. Use remembered facts naturally in answers — it makes you feel like you actually know them.`;
 
 export interface LlmMessage {
   role: "system" | "user" | "assistant";
@@ -512,7 +516,10 @@ export async function planToolCall(
         `- ${t.id}: ${t.description}${t.args ? ` (args JSON: ${t.args})` : " (args: {})"}`,
     )
     .join("\n");
-  const prompt = SYSTEM_PROMPT.replace("{TOOLS}", spec);
+  const prompt = SYSTEM_PROMPT.replace("{TOOLS}", spec).replace(
+    "{MEMORY}",
+    memoryPromptBlock(),
+  );
   const reply = await llmChat(cfg, [
     { role: "system", content: prompt },
     { role: "user", content: userMessage },
