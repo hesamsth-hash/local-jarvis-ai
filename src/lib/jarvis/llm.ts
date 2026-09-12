@@ -3,7 +3,7 @@
 // (KoboldCpp, LM Studio, llama.cpp server, text-generation-webui...).
 // Everything stays on the machine: these are localhost HTTP endpoints.
 
-export type LlmProviderKind = "ollama" | "openai-compatible";
+export type LlmProviderKind = "ollama" | "openai-compatible" | "pollinations";
 
 export interface LlmConfig {
   enabled: boolean;
@@ -89,6 +89,15 @@ export const PRESETS: {
     hint: "one key, 200+ models incl. free GLM/DeepSeek (ids ending in :free) — key from openrouter.ai/keys",
     cloud: true,
   },
+  {
+    id: "pollinations",
+    label: "Pollinations ✨ keyless",
+    provider: "pollinations",
+    url: "https://text.pollinations.ai",
+    hint: "no key, no signup — free community AI (rate-limited). Zero setup: pick it and go.",
+    cloud: true,
+    keyless: true,
+  },
 ];
 
 export interface ModelInfo {
@@ -129,6 +138,8 @@ export async function testConnection(cfg: LlmConfig): Promise<boolean> {
   try {
     if (cfg.provider === "ollama") {
       await fetchJson(`${normalizeUrl(cfg.url)}/api/tags`, { headers: authHeaders(cfg) }, 4000);
+    } else if (cfg.provider === "pollinations") {
+      await fetchJson(`${normalizeUrl(cfg.url)}/models`, undefined, 6000);
     } else {
       await fetchJson(`${apiBase(cfg.url)}/v1/models`, { headers: authHeaders(cfg) }, 4000);
     }
@@ -140,6 +151,20 @@ export async function testConnection(cfg: LlmConfig): Promise<boolean> {
 
 /** List models available on the server. */
 export async function listModels(cfg: LlmConfig): Promise<ModelInfo[]> {
+  if (cfg.provider === "pollinations") {
+    const data = await fetchJson(`${normalizeUrl(cfg.url)}/models`);
+    const raw = (data as unknown) ?? [];
+    // Shape has varied over time: ["openai", ...] or [{name/ id, description?}]
+    const arr = Array.isArray(raw) ? raw : [];
+    return arr
+      .map((m) => {
+        if (typeof m === "string") return { id: m };
+        const o = m as { name?: string; id?: string; description?: string };
+        const id = o.name ?? o.id;
+        return id ? { id, size: o.description?.slice(0, 40) } : null;
+      })
+      .filter((m): m is ModelInfo => m !== null);
+  }
   if (cfg.provider === "ollama") {
     const data = await fetchJson(`${normalizeUrl(cfg.url)}/api/tags`, { headers: authHeaders(cfg) });
     const models = (data as { models?: { name: string; size?: number }[] })
@@ -197,6 +222,25 @@ export async function llmChat(
   opts: ChatOptions = {},
 ): Promise<string> {
   const url = normalizeUrl(cfg.url);
+  if (cfg.provider === "pollinations") {
+    // Keyless OpenAI-compatible endpoint (POST /openai, no /v1 prefix).
+    const data = await fetchJson(`${url}/openai`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders(cfg) },
+      body: JSON.stringify({
+        model: cfg.model || "openai",
+        messages,
+        temperature: opts.temperature ?? 0.4,
+        max_tokens: opts.maxTokens ?? 400,
+        stream: false,
+      }),
+    }, 120000);
+    const content = (data as {
+      choices?: { message?: { content?: string } }[];
+    }).choices?.[0]?.message?.content;
+    if (!content) throw new Error("Empty response from Pollinations");
+    return content;
+  }
   if (cfg.provider === "ollama") {
     const data = await fetchJson(`${url}/api/chat`, {
       method: "POST",
@@ -257,7 +301,8 @@ export async function visionLocate(
   description: string,
 ): Promise<{ target?: VisionTarget; raw?: string; error?: string }> {
   const vision = cfg.visionModel?.trim() || cfg.model;
-  const url = apiBase(cfg.url);
+  const url = cfg.provider === "pollinations" ? normalizeUrl(cfg.url) : apiBase(cfg.url);
+  const chatPath = cfg.provider === "pollinations" ? "/openai" : "/v1/chat/completions";
   const instr = `You are the vision system of a computer-control assistant. Locate: "${description}".
 The image is a full screenshot, ${screenW}x${screenH} pixels.
 Reply with ONLY a JSON object, nothing else:
@@ -284,7 +329,7 @@ If the target is not visible, reply with {"notfound":true}`;
       reply = (data as { message?: { content?: string } }).message?.content ?? "";
     } else {
       const data = await fetchJson(
-        `${url}/v1/chat/completions`,
+        `${url}${chatPath}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json", ...authHeaders(cfg) },
@@ -354,7 +399,8 @@ export async function visionPath(
   description: string,
 ): Promise<{ points?: { x: number; y: number }[]; error?: string }> {
   const vision = cfg.visionModel?.trim() || cfg.model;
-  const url = apiBase(cfg.url);
+  const url = cfg.provider === "pollinations" ? normalizeUrl(cfg.url) : apiBase(cfg.url);
+  const chatPath = cfg.provider === "pollinations" ? "/openai" : "/v1/chat/completions";
   const instr = `You control a mouse to draw on screen. Task: ${description}
 The image is a screenshot, ${screenW}x${screenH} pixels.
 Reply with ONLY JSON: {"points":[{"x":..,"y":..}, ...]} — 8 to 40 points tracing the desired stroke, full-screen pixel coordinates.
@@ -380,7 +426,7 @@ If the request is unclear, reply {"notfound":true}`;
       reply = (data as { message?: { content?: string } }).message?.content ?? "";
     } else {
       const data = await fetchJson(
-        `${url}/v1/chat/completions`,
+        `${url}${chatPath}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json", ...authHeaders(cfg) },

@@ -128,8 +128,8 @@ export function ModelSettings({
           {status === "online" ? "Online" : "Test"}
         </Button>
       </div>
-      {/* Cloud API key (Fireworks / Groq / any OpenAI-compatible cloud) */}
-      {preset?.cloud && (
+      {/* Cloud API key (Fireworks / Groq / OpenRouter) */}
+      {preset?.cloud && !preset.keyless && (
         <div className="space-y-1.5">
           <p className="text-xs font-medium">API key</p>
           <Input
@@ -144,6 +144,12 @@ export function ModelSettings({
             {preset.hint}. Requests go straight from this device to the provider —
             the key never touches any server of ours.
           </p>
+        </div>
+      )}
+      {preset?.keyless && (
+        <div className="rounded-lg bg-emerald-500/10 p-2.5 text-[11px] leading-snug text-emerald-700 ring-1 ring-emerald-500/20 dark:text-emerald-400">
+          ✨ Keyless — no account, no key, zero setup. Hit Test and pick a model.
+          Free community service: occasionally rate-limited or busy.
         </div>
       )}
       {preset && !preset.cloud && (
@@ -246,9 +252,9 @@ export function ModelSettings({
 
       {status === "offline" && (
         <div className="rounded-lg bg-amber-500/10 p-3 text-[11px] leading-relaxed text-amber-700 ring-1 ring-amber-500/20 dark:text-amber-400">
-          {preset?.cloud && !config.apiKey?.trim()
+          {preset?.cloud && !preset.keyless && !config.apiKey?.trim()
             ? "Paste your API key first, then hit Test."
-            : "Couldn't reach the server. Is it running? If it's on another machine, make sure CORS is allowed (e.g. OLLAMA_ORIGINS=*). For cloud presets, check the key is valid."}
+            : "Couldn't reach the server. Is it running? If it's on another machine, make sure CORS is allowed (e.g. OLLAMA_ORIGINS=*). For cloud presets, check the key is valid — keyless services can also be temporarily busy."}
         </div>
       )}
 
