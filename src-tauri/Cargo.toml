@@ -1,6 +1,6 @@
 [package]
 name = "jarvis-desktop"
-version = "1.0.0"
+version = "1.0.1"
 description = "JARVIS Local Console — offline voice assistant desktop app"
 edition = "2021"
 rust-version = "1.77"
