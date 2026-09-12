@@ -35,6 +35,11 @@ import {
   type PluginSpec,
 } from "@/lib/jarvis/plugins";
 import { isDesktop } from "@/lib/jarvis/desktop-bridge";
+import {
+  logActivity,
+  resumeSummary,
+  stampSeen,
+} from "@/lib/jarvis/memory";
 import type {
   ChatMessage,
   EngineLoadState,
@@ -127,7 +132,23 @@ export function useJarvis() {
     }
   }, [llm]);
 
-  // ---------- self-installed plugins ----------
+  // ---------- session continuity: welcome-back ----------
+  const bootGapRef = useRef<number | null | undefined>(undefined);
+  useEffect(() => {
+    if (bootGapRef.current === undefined) {
+      bootGapRef.current = stampSeen();
+      const welcome = resumeSummary(bootGapRef.current ?? undefined);
+      if (welcome) {
+        pushMessage({
+          id: uid(),
+          role: "system",
+          content: welcome,
+          createdAt: Date.now(),
+        });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const refreshPlugins = useCallback(() => {
     void listPlugins().then(setPlugins);
   }, []);
@@ -348,6 +369,11 @@ export function useJarvis() {
     (process: (text: string, mode: "text" | "voice") => Promise<void>): ToolContext => ({
       sub: async (action, arg = ""): Promise<ToolResult> => {
         const a = arg.trim();
+        // continuity: remember which files the user works with
+        if (action === "fs" || action === "code" || action === "dev") {
+          const file = /(?:read|write|open|rename|delete|save)\s+([\w\-. ]+\.[a-z0-9]{1,5})/i.exec(a)?.[1];
+          if (file) logActivity("file", `worked on "${file.trim()}"`, file.trim());
+        }
         switch (action) {
           // ----- YouTube -----
           case "youtube": {

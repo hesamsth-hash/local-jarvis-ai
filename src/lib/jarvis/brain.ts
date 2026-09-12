@@ -25,6 +25,12 @@ import {
   parseToolCall,
   type LlmConfig,
 } from "./llm";
+import {
+  continueReply,
+  extractFileName,
+  logActivity,
+  stampSeen,
+} from "./memory";
 import type { ChatMessage } from "./types";
 
 export interface BrainResult {
@@ -82,6 +88,10 @@ export async function runBrain(
 ): Promise<BrainResult> {
   const raw = input.trim();
   const text = raw.toLowerCase();
+
+  // continuity: record what the user is doing (local-only activity log)
+  stampSeen();
+  logActivity("command", `asked: ${raw.slice(0, 120)}`, extractFileName(raw));
 
   // ---------- always-offline intents ----------
   if (
@@ -176,6 +186,22 @@ export async function runBrain(
     const { forget } = await import("./memory");
     const r = forget(forgetMatch[1]);
     return { reply: r.data, intent: "memory.forget", tool: "memory", ok: r.ok };
+  }
+
+  // "continue" / "where were we" — resume the last session's work
+  if (
+    /^(continue|resume|where were we|carry on|pick up where (we|i) left off|back to (work|it))\b/.test(
+      text,
+    ) &&
+    text.length < 60
+  ) {
+    return {
+      reply: continueReply(),
+      intent: "memory.continue",
+      tool: "memory",
+      ok: true,
+      refreshFs: true,
+    };
   }
 
   // ---------- LLM + tool registry tier ----------
