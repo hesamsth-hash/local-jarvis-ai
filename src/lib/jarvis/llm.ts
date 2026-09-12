@@ -36,6 +36,8 @@ export const PRESETS: {
   hint: string;
   /** Cloud endpoint — needs an API key instead of a local server. */
   cloud?: boolean;
+  /** Cloud endpoint that needs NO key at all (e.g. Pollinations). */
+  keyless?: boolean;
 }[] = [
   {
     id: "ollama",
@@ -97,6 +99,13 @@ export const PRESETS: {
     hint: "no key, no signup — free community AI (rate-limited). Zero setup: pick it and go.",
     cloud: true,
     keyless: true,
+  },
+  {
+    id: "omniroute",
+    label: "OmniRoute gateway",
+    provider: "openai-compatible",
+    url: "http://localhost:20128/v1",
+    hint: "run OmniRoute locally (open-source AI gateway) — it pools your AI accounts into one local OpenAI-compatible endpoint",
   },
 ];
 
