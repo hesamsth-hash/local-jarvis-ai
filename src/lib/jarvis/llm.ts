@@ -101,6 +101,15 @@ export const PRESETS: {
     keyless: true,
   },
   {
+    id: "keylessai",
+    label: "KeylessAI ✨ keyless",
+    provider: "openai-compatible",
+    url: "https://keylessai.thryx.workers.dev/v1",
+    hint: "free OpenAI-compatible endpoint, no key — if it's down, paste the current /v1 URL from their npm page (search \"keylessai npm\") into the address field",
+    cloud: true,
+    keyless: true,
+  },
+  {
     id: "omniroute",
     label: "OmniRoute gateway",
     provider: "openai-compatible",
