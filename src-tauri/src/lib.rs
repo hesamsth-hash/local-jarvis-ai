@@ -843,6 +843,32 @@ fn open_url(app: tauri::AppHandle, url: String) -> Result<OkMsg, String> {
 #[cfg(target_os = "android")]
 #[tauri::command]
 fn execute_command(command: String, args: Option<Vec<String>>) -> OkMsg {
+    let arglist = args.unwrap_or_default();
+    // The root-GRANT probe: running `su` is itself what makes KernelSU /
+    // Magisk pop their allow dialog, so it must bypass the has_root()
+    // pre-check — otherwise root could never be requested from the app.
+    if command == "su" {
+        let script = arglist.join(" ");
+        return match std::process::Command::new("su").arg("-c").arg(&script).output() {
+            Ok(o) => {
+                if o.status.success() {
+                    OkMsg {
+                        ok: true,
+                        message: "Root granted — JARVIS has superuser access.".into(),
+                    }
+                } else {
+                    OkMsg {
+                        ok: false,
+                        message: "Root request wasn't approved. Allow JARVIS in your manager (KernelSU / Magisk → Superuser) and try again.".into(),
+                    }
+                }
+            }
+            Err(e) => OkMsg {
+                ok: false,
+                message: format!("No root manager answered (is KernelSU or Magisk installed?): {e}"),
+            },
+        };
+    }
     if !has_root() {
         return OkMsg {
             ok: false,
@@ -850,11 +876,9 @@ fn execute_command(command: String, args: Option<Vec<String>>) -> OkMsg {
         };
     }
     let mut line = command.clone();
-    if let Some(a) = args {
-        if !a.is_empty() {
-            line.push(' ');
-            line.push_str(&a.join(" "));
-        }
+    if !arglist.is_empty() {
+        line.push(' ');
+        line.push_str(&arglist.join(" "));
     }
     match su_run(&line) {
         Ok(out) => OkMsg {

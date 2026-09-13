@@ -52,6 +52,32 @@ export async function hasRootAccess(): Promise<boolean> {
   }
 }
 
+/**
+ * Ask the user's root manager (KernelSU / Magisk) to grant JARVIS superuser
+ * access. Running `su` is what makes the manager pop its allow dialog — this
+ * triggers exactly that, then reports whether it was approved. Works only in
+ * the Android app on a rooted device.
+ */
+export async function requestRootAccess(): Promise<{
+  ok: boolean;
+  message: string;
+}> {
+  const t = tauri();
+  if (!t) return { ok: false, message: "Root access only applies inside the Android app." };
+  try {
+    const r = (await t.invoke("execute_command", {
+      command: "su",
+      args: ["id"],
+    })) as { ok: boolean; message: string };
+    return r;
+  } catch (e) {
+    return {
+      ok: false,
+      message: e instanceof Error ? e.message : "Root request failed.",
+    };
+  }
+}
+
 export interface DesktopSystemInfo {
   os_name: string;
   os_version: string;

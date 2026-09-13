@@ -33,6 +33,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { RootAccessCard } from "@/components/jarvis/RootAccessCard";
 import { CATEGORIES, TOOLS } from "@/lib/jarvis/tools";
 import type { PluginSpec } from "@/lib/jarvis/plugins";
 import { cn } from "@/lib/utils";
@@ -106,6 +107,7 @@ export function PluginBay({
 }: PluginBayProps) {
   return (
     <div className="space-y-4 p-4">
+      <RootAccessCard />
       {CATEGORIES.map((cat) => {
         const tools = TOOLS.filter((t) => t.category === cat.id && !t.id.startsWith("plugin."));
         if (tools.length === 0) return null;
