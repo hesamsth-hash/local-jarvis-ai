@@ -150,7 +150,7 @@ export function ModelSettings({
           Free community service: occasionally rate-limited or busy.
         </div>
       )}
-      {preset && !preset.cloud && (
+      {preset && (!preset.cloud || preset.id === "freellmapi") && (
         <p className="font-mono text-[10px] text-muted-foreground">
           setup: {preset.hint}
         </p>

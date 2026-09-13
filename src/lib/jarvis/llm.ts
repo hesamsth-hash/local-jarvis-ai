@@ -125,6 +125,14 @@ export const PRESETS: {
     url: "http://localhost:20128/v1",
     hint: "run OmniRoute locally (open-source AI gateway) — it pools your AI accounts into one local OpenAI-compatible endpoint",
   },
+  {
+    id: "freellmapi",
+    label: "FreeLLMAPI 🔀 gateway",
+    provider: "openai-compatible",
+    url: "http://localhost:3001/v1",
+    hint: "self-hosted router (tashfeenahmed/freellmapi) — stacks 34 free provider tiers (~7.4B tokens/mo) behind one endpoint. Install: freellmapi.co → add keys on its dashboard → paste its unified key below",
+    cloud: true,
+  },
   // ---- Keyed cloud: free tiers with a key ----
   {
     id: "openrouter",

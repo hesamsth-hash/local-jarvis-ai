@@ -134,19 +134,24 @@ export default function Dashboard() {
                 Install
               </Button>
             )}
-            {user?.name || user?.email ? (
-              <span className="hidden truncate rounded-md border-border bg-muted px-3 py-1 font-mono text-xs text-muted-foreground sm:block">
-                {user?.name ?? user?.email}
-              </span>
-            ) : null}
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 rounded-md border-primary/30 px-3 font-mono text-xs uppercase tracking-wider text-primary hover:bg-primary/10"
-              onClick={handleSignOut}
-            >
-              Sign out
-            </Button>
+            {/* Native builds have no cloud account — no account UI at all. */}
+            {!isDesktop() && (
+              <>
+                {user?.name || user?.email ? (
+                  <span className="hidden truncate rounded-md border-border bg-muted px-3 py-1 font-mono text-xs text-muted-foreground sm:block">
+                    {user?.name ?? user?.email}
+                  </span>
+                ) : null}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 rounded-md border-primary/30 px-3 font-mono text-xs uppercase tracking-wider text-primary hover:bg-primary/10"
+                  onClick={handleSignOut}
+                >
+                  Sign out
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </header>
