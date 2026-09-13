@@ -731,7 +731,7 @@ fn desktop_picture() -> Result<Screenshot, String> {
 #[cfg(target_os = "android")]
 #[tauri::command]
 fn screen_metrics() -> Result<ScreenMetrics, String> {
-    let out = su_run("wm size").or_else(|_| {
+    let out = su_run("wm size").or_else(|_| -> Result<String, String> {
         let o = std::process::Command::new("wm")
             .arg("size")
             .output()
@@ -798,7 +798,7 @@ fn launch_app(name: String) -> OkMsg {
     }
     // Fuzzy: search installed packages for the requested name.
     let list = su_run("pm list packages")
-        .or_else(|_| {
+        .or_else(|_| -> Result<String, String> {
             let o = std::process::Command::new("pm")
                 .arg("list")
                 .arg("packages")
