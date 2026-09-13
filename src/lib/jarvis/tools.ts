@@ -246,6 +246,93 @@ export const TOOLS: JarvisTool[] = [
     },
   },
   {
+    id: "device_health",
+    name: "Device Health",
+    category: "system",
+    description:
+      "Battery level/charging and thermal state — real values on Android (root), best-effort in the browser.",
+    llmDescription:
+      "report battery level, charging state, and thermal health of this device — real values on the Android app (root via dumpsys), browser fallback exposes battery when the device allows it",
+    argHint: "",
+    handler: async () => {
+      const { isDesktop, desktopExecute } = await import("./desktop-bridge");
+      if (isDesktop()) {
+        const r = await desktopExecute("dumpsys", ["battery"]);
+        if (r && !r.startsWith("Execute failed") && !r.startsWith("Couldn't") && !r.startsWith("Running shell")) {
+          const grab = (re: RegExp) => re.exec(r)?.[1]?.trim();
+          const level = grab(/level:\s*(\d+)/i);
+          const status = grab(/status:\s*(\d+)/i);
+          const charging =
+            /AC powered: true|USB powered: true/i.test(r) || status === "2" || status === "5";
+          const temp = grab(/temperature:\s*(\d+)/i);
+          let out = level
+            ? `Battery ${level}%${charging ? " (charging)" : " (on battery)"}`
+            : "Battery readout unavailable";
+          if (temp) out += ` · temp ${(parseInt(temp, 10) / 10).toFixed(1)}°C`;
+          return { ok: true, data: out };
+        }
+      }
+      // Browser fallback (PWA / desktop webview without dumpsys)
+      try {
+        const nav = navigator as Navigator & {
+          getBattery?: () => Promise<{ level: number; charging: boolean }>;
+        };
+        const b = await nav.getBattery?.();
+        if (b)
+          return {
+            ok: true,
+            data: `Battery ${Math.round(b.level * 100)}%${b.charging ? " (charging)" : " (on battery)"}`,
+          };
+      } catch {
+        // ignore
+      }
+      return {
+        ok: false,
+        data: "Battery/thermal info isn't exposed here — the Android app with root granted reads the real values via dumpsys.",
+      };
+    },
+  },
+  {
+    id: "notifications",
+    name: "Notifications",
+    category: "comms",
+    description:
+      "Counts or reads recent device notifications — Android app with root via dumpsys.",
+    llmDescription:
+      'device notifications — actions: (empty) count active notifications, "read" list the newest ones with their text. Needs the Android app with root granted; elsewhere explains the limits honestly.',
+    argHint: "count | read",
+    handler: async (arg) => {
+      const { isDesktop, desktopExecute } = await import("./desktop-bridge");
+      if (!isDesktop())
+        return {
+          ok: false,
+          data: "Reading notifications needs the Android app with root granted (Tools tab → Grant root access).",
+        };
+      const r = await desktopExecute("dumpsys", ["notification", "--noredact"]);
+      if (!r || r.startsWith("Execute failed") || r.startsWith("Couldn't") || r.startsWith("Running shell"))
+        return {
+          ok: false,
+          data: "Couldn't read the notification stream — grant JARVIS root in KernelSU/Magisk, then try again.",
+        };
+      const titles = [...r.matchAll(/android\.title=(?:null|String\()?([^\n}]*)/g)]
+        .map((m) => m[1]!.trim().replace(/"$/, ""))
+        .filter((t) => t && t !== "null");
+      const records = (r.match(/NotificationRecord/g) ?? []).length;
+      if (/^read/i.test(arg.trim())) {
+        return {
+          ok: true,
+          data: titles.length
+            ? `Newest notifications:\n${titles.slice(0, 8).map((t) => `• ${t}`).join("\n")}`
+            : `~${records} records but no readable titles (apps can hide them).`,
+        };
+      }
+      return {
+        ok: true,
+        data: `${records} active notification record${records === 1 ? "" : "s"} on this device.`,
+      };
+    },
+  },
+  {
     id: "screen_camera",
     name: "Screen & Camera",
     category: "system",
@@ -698,6 +785,38 @@ export const TOOLS: JarvisTool[] = [
         }
       return { ok: true, data: memorySummary() };
     },
+  },
+
+  {
+    id: "bulk_rename",
+    name: "Bulk Rename",
+    category: "files",
+    description:
+      "Renames every matching file in the workspace in one go (e.g. all .jpg → trip-1, trip-2…).",
+    llmDescription:
+      'bulk rename workspace files — args: pattern and new base, e.g. "*.jpg to trip-" renames every jpg to trip-1.jpg, trip-2.jpg…; never overwrites existing files',
+    argHint: '"*.jpg to trip-"',
+    handler: async (arg, ctx) => ctx.sub("bulkrename", arg),
+  },
+  {
+    id: "transcript_export",
+    name: "Transcript Export",
+    category: "utilities",
+    description: "Saves this conversation as a Markdown file download.",
+    llmDescription:
+      'export/save the current conversation transcript as a Markdown file — args: "" ',
+    argHint: "",
+    handler: async (_arg, ctx) => ctx.sub("export", ""),
+  },
+  {
+    id: "focus_mode",
+    name: "Focus Mode",
+    category: "utilities",
+    description: "HUD focus timer with a notification when the session ends.",
+    llmDescription:
+      'start a focus/pomodoro timer — args: minutes (default 25), e.g. "25". I\'ll notify when it completes.',
+    argHint: "minutes",
+    handler: async (arg, ctx) => ctx.sub("focus", arg),
   },
 
   // ============ SELF-EXTENSION (meta tools) ============

@@ -138,11 +138,52 @@ export async function runBrain(
     const brain = deps.llmReady
       ? `local LLM online (${deps.llm.model || "default model"})`
       : "offline intent mode";
+    let health = "";
+    try {
+      const nav = navigator as Navigator & {
+        getBattery?: () => Promise<{ level: number; charging: boolean }>;
+      };
+      const b = await nav.getBattery?.();
+      if (b)
+        health = ` Battery ${Math.round(b.level * 100)}%${b.charging ? " (charging)" : ""}.`;
+    } catch {
+      // ignore
+    }
     return {
-      reply: `All systems nominal. Brain: ${brain}. Engines: Kokoro TTS + Whisper STT local. Workspace ${conn}. No data leaves this device.`,
+      reply: `All systems nominal. Brain: ${brain}. Engines: Kokoro TTS + Whisper STT local. Workspace ${conn}.${health} No data leaves this device.`,
       intent: "status",
       ok: true,
     };
+  }
+
+  // Focus mode — works fully offline
+  if (/^(?:focus|pomodoro)\s*(?:mode\s*)?(?:on\s*)?(?:for\s*)?(\d+)?\s*(?:minutes?|mins?|m)?\s*(?:mode\s*)?$/i.test(text)) {
+    const mins = /(?:for\s+)?(\d+)/.exec(text)?.[1];
+    const r = await executeTool("focus_mode", mins ?? "25", deps.toolCtx);
+    return { reply: r.data, intent: "focus.start", tool: "focus_mode", ok: r.ok };
+  }
+  if (/(?:focus|pomodoro).*(?:off|stop|cancel|end)/i.test(text) && text.length < 40) {
+    return {
+      reply: "Focus timer cleared — no ping at the end.",
+      intent: "focus.stop",
+      ok: true,
+    };
+  }
+  if (/^(?:export|save|download) (?:the )?(?:transcript|chat|conversation|history)\b/.test(text)) {
+    const r = await executeTool("transcript_export", "", deps.toolCtx);
+    return { reply: r.data, intent: "transcript.export", tool: "transcript_export", ok: r.ok };
+  }
+  if (/^(?:battery|device health|how much battery|thermal|device temperature)\b/.test(text)) {
+    const r = await executeTool("device_health", "", deps.toolCtx);
+    return { reply: r.data, intent: "device.health", tool: "device_health", ok: r.ok };
+  }
+  // Bulk rename — offline, straight on the workspace
+  const bulkMatch = raw.match(/^(?:bulk[- ]?rename|rename all|rename every)\s+(?:all\s+)?\*?\.?([a-z0-9]+)?\s*(?:files?\s*)?to\s+["']?(.+?)["']?\s*$/i)
+    ?? raw.match(/^(?:bulk[- ]?rename|rename all)\s+replace\s+(.+?)\s+with\s+(.+?)\s*$/i);
+  if (bulkMatch) {
+    if (!deps.connected) return needConnection("bulk rename files");
+    const r = await executeTool("bulk_rename", raw.replace(/^(?:bulk[- ]?rename|rename all|rename every)\s+/i, ""), deps.toolCtx);
+    return { reply: r.data, intent: "fs.bulkrename", tool: "bulk_rename", ok: r.ok, refreshFs: true };
   }
 
   if (/\b(time|clock)\b/.test(text) && text.length < 30) {

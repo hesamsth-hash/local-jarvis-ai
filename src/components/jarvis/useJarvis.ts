@@ -132,6 +132,7 @@ export function useJarvis() {
 
   const recorderRef = useRef<RecorderHandle | null>(null);
   const speakHandleRef = useRef<{ stop: () => void } | null>(null);
+  const focusTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const disabledRef = useRef(disabledTools);
   disabledRef.current = disabledTools;
   const connectedRef = useRef(connected);
@@ -623,6 +624,104 @@ export function useJarvis() {
               ok: true,
               data: `Now watching "${topic}" — I'll check every 10 minutes and notify you on updates (while this tab is open).`,
             };
+          }
+          // ----- Device health (Android root: battery/temps) -----
+          case "health": {
+            const { findTool, executeTool } = await import("@/lib/jarvis/tools");
+            if (!findTool("device_health"))
+              return { ok: false, data: "Device health tool unavailable in this build." };
+            // reuse the full context (sub/capture/notify/…) for the tool
+            return executeTool("device_health", "", toolCtx(process));
+          }
+          // ----- Bulk rename -----
+          case "bulkrename": {
+            const mod = await import("@/lib/jarvis/brain-fs");
+            const listing = await mod.runFsAction("list", () => connectedRef.current);
+            if (!listing.ok) return listing;
+            // args: "*.jpg to trip-" | "prefix screenshot to shot-" | "replace IMG_ with trip-"
+            const m = a.match(/(?:^|\s)\*?\.?(\*\.[a-z0-9]+)\s+to\s+(.+)$/i) ?? a.match(/replace\s+(.+?)\s+with\s+(.+)$/i);
+            if (!m)
+              return {
+                ok: false,
+                data: 'Try: "bulk rename *.jpg to trip-" — every matching file becomes trip-1.jpg, trip-2.jpg… (or "replace IMG_ with trip-" to swap the pattern in place).',
+              };
+            const pattern = m[1]!.toLowerCase();
+            const replacement = m[2]!.replace(/["']/g, "").trim();
+            const { listDir, renamePath, exists } = await import("@/lib/jarvis/fs-tools");
+            const { entries } = await listDir("");
+            let done = 0;
+            let n = 1;
+            for (const e of entries) {
+              if (e.kind !== "file") continue;
+              const lower = e.name.toLowerCase();
+              const matches = pattern === "replace"
+                ? lower.includes(replacement.replace(/\*/g, ""))
+                : false;
+              let target: string | null = null;
+              if (pattern.startsWith("*.") && lower.endsWith(pattern.slice(1))) {
+                const ext = e.name.slice(e.name.lastIndexOf("."));
+                target = `${replacement}${n}${ext}`;
+              } else if (matches) {
+                target = e.name.replace(replacement.replace(/\*/g, ""), replacement);
+              }
+              if (!target || target === e.name) continue;
+              // never overwrite an existing file
+              if (await exists(target)) continue;
+              await renamePath(e.name, target);
+              done++;
+              n++;
+            }
+            return {
+              ok: done > 0,
+              data:
+                done > 0
+                  ? `Renamed ${done} file${done === 1 ? "" : "s"} using "${replacement}". Refreshing the deck.`
+                  : `No files matched — check the pattern (e.g. "bulk rename *.jpg to trip-").`,
+              refreshFs: true,
+            } as ToolResult & { refreshFs?: boolean };
+          }
+          // ----- Focus mode (HUD timer) -----
+          case "focus": {
+            const m = a.match(/(\d+)\s*(?:minutes?|mins?|m)?/i);
+            const mins = m ? Math.min(240, Math.max(1, parseInt(m[1]!, 10))) : 25;
+            if (focusTimerRef.current) {
+              clearInterval(focusTimerRef.current);
+              focusTimerRef.current = null;
+            }
+            const endsAt = Date.now() + mins * 60000;
+            const iv = setInterval(() => {
+              const left = endsAt - Date.now();
+              if (left <= 0) {
+                clearInterval(iv);
+                focusTimerRef.current = null;
+                notify("Focus session complete", `${mins} minutes done — nice work, Sir.`);
+              }
+            }, 30000);
+            focusTimerRef.current = iv;
+            return {
+              ok: true,
+              data: `Focus mode: ${mins} minutes on the clock. I'll ping you when the session ends. Say "focus off" to cancel.`,
+            };
+          }
+          // ----- Transcript export (Markdown download) -----
+          case "export": {
+            const md = [
+              "# JARVIS transcript",
+              `_${new Date().toLocaleString()}_`,
+              "",
+              ...messagesRef.current.map(
+                (m) =>
+                  `**${m.role === "user" ? "You" : m.role === "jarvis" ? "JARVIS" : "System"}** (${new Date(m.createdAt).toLocaleTimeString()}):\n\n${m.content}\n`,
+              ),
+            ].join("\n");
+            const blob = new Blob([md], { type: "text/markdown" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `jarvis-transcript-${new Date().toISOString().slice(0, 10)}.md`;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+            return { ok: true, data: "Transcript saved as a Markdown download." };
           }
           default:
             return { ok: false, data: `Unknown sub-action "${action}".` };

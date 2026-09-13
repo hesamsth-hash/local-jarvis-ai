@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  Activity,
   AudioLines,
   BrainCircuit,
   Cpu,
@@ -16,8 +17,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { useNavigate } from "react-router";
-import { Button } from "@/components/ui/button";
+import { useNavigate } from "react-router";import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -30,7 +30,7 @@ import { PluginBay } from "@/components/jarvis/PluginBay";
 import { VoiceControls } from "@/components/jarvis/VoiceControls";
 import { useJarvis } from "@/components/jarvis/useJarvis";
 import { usePwaInstall } from "@/hooks/use-pwa-install";
-import { isDesktop } from "@/lib/jarvis/desktop-bridge";
+import { isDesktop, onDesktopStats, type DesktopSystemInfo } from "@/lib/jarvis/desktop-bridge";
 import { cn } from "@/lib/utils";
 
 export default function Dashboard() {
@@ -40,6 +40,13 @@ export default function Dashboard() {
   const { canInstall, install, standalone } = usePwaInstall();
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const [booting, setBooting] = useState(!isDesktop());
+  const [sysInfo, setSysInfo] = useState<DesktopSystemInfo | null>(null);
+
+  // Live CPU/RAM from the native bridge (desktop + rooted Android stream every 2s).
+  useEffect(() => {
+    if (!isDesktop()) return;
+    return onDesktopStats((info) => setSysInfo(info));
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => setBooting(false), 1300);
@@ -168,11 +175,9 @@ export default function Dashboard() {
                 // system online
               </p>
               <h1 className="font-display text-xl font-semibold tracking-wide sm:text-2xl">
-                Good {greeting()}, {user?.name?.split(" ")[0] ?? "Sir"}
+                {greeting()}, {user?.name?.split(" ")[0] ?? "Sir"}
               </h1>
-              <p className="max-w-md text-sm text-muted-foreground">
-                Voice, brain, and tools — all running on this device.
-              </p>
+              <p className="max-w-md text-sm text-muted-foreground">{pick(TAGLINES)}</p>
               <div className="mt-2 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
                 <HudChip icon={ShieldCheck} label="Privacy" value="100% local" />
                 <HudChip
@@ -186,6 +191,11 @@ export default function Dashboard() {
                   value={
                     jarvis.commandCount == null ? "—" : String(jarvis.commandCount)
                   }
+                />
+                <HudChip
+                  icon={Activity}
+                  label="Machine"
+                  value={machineChip(sysInfo)}
                 />
               </div>
             </div>
@@ -330,6 +340,7 @@ export default function Dashboard() {
               />
             </TabsContent>
             <TabsContent value="tools" className="max-h-[520px] overflow-y-auto px-0 pb-3">
+              <AutostartToggle />
               <PluginBay
                 disabledTools={jarvis.disabledTools}
                 onToggleTool={jarvis.toggleTool}
@@ -414,6 +425,55 @@ export default function Dashboard() {
   );
 }
 
+// Windows auto-start — strictly opt-in, default OFF. Browser/PWA builds never show it.
+function AutostartToggle() {
+  const [enabled, setEnabled] = useState(false);
+  const [available] = useState(() => isDesktop());
+
+  useEffect(() => {
+    if (!available) return;
+    void (async () => {
+      try {
+        const mod = await import("@tauri-apps/plugin-autostart");
+        setEnabled(await mod.isEnabled());
+      } catch {
+        // desktop webview without the plugin — hide silently
+      }
+    })();
+  }, [available]);
+
+  if (!available) return null;
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-primary/15 px-4 py-3">
+      <div>
+        <p className="text-xs font-medium">Start with Windows</p>
+        <p className="font-mono text-[10px] text-muted-foreground">
+          Launch JARVIS automatically at sign-in (off by default).
+        </p>
+      </div>
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-7 shrink-0 rounded-md border-primary/30 px-3 font-mono text-[10px] uppercase tracking-wider text-primary hover:bg-primary/10"
+        onClick={() => {
+          void (async () => {
+            try {
+              const mod = await import("@tauri-apps/plugin-autostart");
+              if (enabled) await mod.disable();
+              else await mod.enable();
+              setEnabled(!enabled);
+            } catch {
+              // ignore
+            }
+          })();
+        }}
+      >
+        {enabled ? "On" : "Off"}
+      </Button>
+    </div>
+  );
+}
+
 function HudChip({
   icon: Icon,
   label,
@@ -436,6 +496,18 @@ function HudChip({
   );
 }
 
+// Live machine chip: real CPU/RAM when the native bridge streams, estimates otherwise.
+function machineChip(info: DesktopSystemInfo | null): string {
+  if (info) {
+    const ramPct = info.total_memory_gb
+      ? Math.round((info.used_memory_gb / info.total_memory_gb) * 100)
+      : 0;
+    return `CPU ${info.cpu_usage_percent.toFixed(0)}% · RAM ${ramPct}%`;
+  }
+  const cores = navigator.hardwareConcurrency ?? 0;
+  return cores ? `${cores} cores` : "local";
+}
+
 function isAndroidLabel() {
   return typeof navigator !== "undefined" && /android/i.test(navigator.userAgent)
     ? "ROOT BRIDGE · ARMED"
@@ -452,9 +524,29 @@ const BOOT_LINES = [
   "Cache verified. Voice and hearing online.",
 ];
 
+// Rotating greeting openers (time-aware pick, randomized per visit).
+const GREETINGS: Record<string, string[]> = {
+  morning: ["Good morning", "Morning", "Rise and shine"],
+  afternoon: ["Good afternoon", "Afternoon", "Welcome back"],
+  evening: ["Good evening", "Evening", "Working late"],
+  night: ["Burning the midnight oil", "Late shift", "Still up"],
+};
+
+// Rotating subtitle lines under the greeting.
+const TAGLINES = [
+  "Voice, brain, and tools — all running on this device.",
+  "Keyless brain online. Your data stays put.",
+  "Listening, thinking, acting — locally.",
+  "No cloud in the loop unless you ask for one.",
+  "Every tool on this panel runs on-device.",
+];
+
+function pick<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)]!;
+}
+
 function greeting() {
   const h = new Date().getHours();
-  if (h < 12) return "morning";
-  if (h < 18) return "afternoon";
-  return "evening";
+  const key = h < 5 ? "night" : h < 12 ? "morning" : h < 18 ? "afternoon" : h < 22 ? "evening" : "night";
+  return pick(GREETINGS[key]!);
 }
