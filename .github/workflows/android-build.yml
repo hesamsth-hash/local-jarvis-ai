@@ -49,8 +49,12 @@ jobs:
           echo "NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
           echo "Using NDK: $NDK_DIR"
 
+      # CI=true (not 1!) — the CLI auto-maps the env var to its --ci flag,
+      # which only accepts true/false. Skips interactive prompts.
       - name: Initialize Android project
-        run: CI=1 bun tauri android init
+        run: bun tauri android init
+        env:
+          CI: "true"
 
       - name: Build APK (aarch64)
         run: bun tauri android build --apk --debug --target aarch64
