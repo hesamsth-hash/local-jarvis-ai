@@ -1,6 +1,7 @@
 import {
   desktopLaunchApp,
   desktopSystemInfo,
+  isAndroid,
 } from "./desktop-bridge";
 
 // Tool registry — every JARVIS capability, grouped by category.
@@ -334,6 +335,12 @@ export const TOOLS: JarvisTool[] = [
         return {
           ok: false,
           data: "See & Act drives the real mouse — it needs the desktop app. In a browser, Screen & Camera can show the screen but not act on it.",
+        };
+      }
+      if (isAndroid()) {
+        return {
+          ok: false,
+          data: "See & Act can't work on Android: the OS never lets one app see or click another app's screen. On the Windows version of JARVIS this works fully. Here I can still use your camera, open links, run web tools, and talk.",
         };
       }
       const shot = await desktopPicture();

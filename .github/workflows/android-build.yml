@@ -1,0 +1,89 @@
+name: Build Android APK
+
+# Builds the native Android app (.apk) for every push to main and version
+# tags. You never need Android Studio or the NDK locally — push and download.
+#
+# The APK is signed with your release keystore if you add the repo secret
+# ANDROID_KEYSTORE_BASE64 (base64 of a .keystore file). Without it, a
+# temporary key is used so the build still succeeds and installs.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch: # also runnable manually from the Actions tab
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build frontend (isolated so its errors are obvious)
+        run: bun run build
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: aarch64-linux-android
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # GitHub's ubuntu runners ship the Android SDK; expose the newest
+      # preinstalled NDK so the Tauri CLI can cross-compile.
+      - name: Locate Android NDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          NDK_DIR=$(ls -d "${ANDROID_HOME}"/ndk/* 2>/dev/null | sort | tail -n1)
+          if [ -z "$NDK_DIR" ]; then
+            echo "No preinstalled NDK found — installing one via sdkmanager"
+            yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018" >/dev/null
+            NDK_DIR="${ANDROID_HOME}/ndk/27.2.12479018"
+          fi
+          echo "NDK_HOME=$NDK_DIR" >> $GITHUB_ENV
+          echo "Using NDK at $NDK_DIR"
+
+      - name: Initialize Android project (one-time gradle scaffold)
+        run: bun tauri android init --ci
+
+      - name: Prepare signing key
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          KS="$PWD/src-tauri/gen/android/jarvis.keystore"
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > "$KS"
+            echo "Using release keystore from repo secrets."
+          else
+            keytool -genkeypair -v -keystore "$KS" -alias jarvis -keyalg RSA \
+              -keysize 2048 -validity 36500 -storepass jarvis123 -keypass jarvis123 \
+              -dname "CN=JARVIS Local Console, OU=Dev, O=JARVIS, L=Local, ST=Local, C=US"
+            echo "KS_TEMP=1" >> $GITHUB_ENV
+            echo "No ANDROID_KEYSTORE_BASE64 secret — signed with a temporary key."
+          fi
+
+      - name: Build signed APK (aarch64)
+        env:
+          TAURI_ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/src-tauri/gen/android/jarvis.keystore
+          TAURI_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'jarvis123' }}
+          TAURI_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || 'jarvis' }}
+          TAURI_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PRIVATE_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD || 'jarvis123' }}
+        run: bun tauri android build --apk --target aarch64
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: JARVIS-Android-APK
+          path: src-tauri/gen/android/app/build/outputs/apk/*/release/*.apk
+          if-no-files-found: error

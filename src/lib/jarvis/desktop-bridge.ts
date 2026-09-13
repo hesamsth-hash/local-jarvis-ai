@@ -1,6 +1,6 @@
 // Desktop bridge — talks to the Tauri backend when the console runs as a
-// native Windows/Linux/macOS app. In a plain browser it reports unavailable
-// and every call degrades gracefully.
+// native Windows/Linux/macOS/Android app. In a plain browser it reports
+// unavailable and every call degrades gracefully.
 
 interface TauriInvoke {
   (cmd: string, args?: Record<string, unknown>): Promise<unknown>;
@@ -18,6 +18,18 @@ function tauri(): { invoke: TauriInvoke; event?: TauriEvent } | null {
   const internals = w.__TAURI_INTERNALS__;
   if (!internals) return null;
   return { invoke: internals.invoke, event: w.__TAURI__?.event };
+}
+
+let androidCache: boolean | null = null;
+
+/** True when running inside the native Android (APK) build. */
+export function isAndroid(): boolean {
+  if (androidCache !== null) return androidCache;
+  androidCache =
+    typeof navigator !== "undefined" &&
+    /android/i.test(navigator.userAgent) &&
+    tauri() !== null;
+  return androidCache;
 }
 
 export function isDesktop(): boolean {

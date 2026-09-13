@@ -1,10 +1,18 @@
-use base64::Engine as _;
-use enigo::{Keyboard, Mouse};
 use serde::Serialize;
+#[cfg(not(target_os = "android"))]
 use std::sync::Mutex;
 use sysinfo::{Components, System};
 
-// ---------------- System info ----------------
+// JARVIS native backend.
+//
+// Desktop (Windows/macOS/Linux): full OS powers — input control (enigo),
+// screen capture, app launching, real system stats.
+//
+// Android: the same UI and brain, but input/capture/app-launch are stubbed
+// with honest replies — Android's security model doesn't allow one app to
+// click, type, or screenshot others. System info + notifications work.
+
+// ---------------- System info (all platforms) ----------------
 
 #[derive(Serialize, Clone)]
 pub struct SystemInfo {
@@ -30,7 +38,6 @@ fn collect_info() -> SystemInfo {
         .map(|c| c.brand().trim().to_string())
         .unwrap_or_else(|| "Unknown CPU".into());
 
-    // Probe common GPU component labels (varies by driver/platform).
     let components = Components::new_with_refreshed_list();
     let gpus: Vec<String> = components
         .list()
@@ -76,10 +83,13 @@ fn system_info_stream(app: tauri::AppHandle) {
     });
 }
 
-// ---------------- Input control (enigo) ----------------
+// ---------------- Desktop: input control (enigo) ----------------
+// Compiled only outside Android.
 
+#[cfg(not(target_os = "android"))]
 struct InputState(Mutex<Option<enigo::Enigo>>);
 
+#[cfg(not(target_os = "android"))]
 fn with_input<T>(
     state: &tauri::State<'_, InputState>,
     f: impl FnOnce(&mut enigo::Enigo) -> Result<T, String>,
@@ -93,6 +103,7 @@ fn with_input<T>(
     f(guard.as_mut().unwrap())
 }
 
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn mouse_move(
     state: tauri::State<'_, InputState>,
@@ -114,6 +125,7 @@ fn mouse_move(
     })
 }
 
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn mouse_click(
     state: tauri::State<'_, InputState>,
@@ -137,6 +149,7 @@ fn mouse_click(
     })
 }
 
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn mouse_scroll(state: tauri::State<'_, InputState>, amount: i32) -> Result<String, String> {
     with_input(&state, |enigo| {
@@ -145,6 +158,7 @@ fn mouse_scroll(state: tauri::State<'_, InputState>, amount: i32) -> Result<Stri
     })
 }
 
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn mouse_double_click(state: tauri::State<'_, InputState>) -> Result<String, String> {
     use enigo::{Button, Direction};
@@ -157,6 +171,7 @@ fn mouse_double_click(state: tauri::State<'_, InputState>) -> Result<String, Str
 }
 
 /// Press, move smoothly, release — used for drags and drawing strokes.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn mouse_drag(
     state: tauri::State<'_, InputState>,
@@ -195,6 +210,7 @@ fn mouse_drag(
 }
 
 /// Press at the first point, trace every point, release — freehand drawing.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn mouse_draw(state: tauri::State<'_, InputState>, points: Vec<(i32, i32)>) -> Result<String, String> {
     use enigo::{Button, Direction};
@@ -225,6 +241,7 @@ fn mouse_draw(state: tauri::State<'_, InputState>, points: Vec<(i32, i32)>) -> R
     })
 }
 
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn key_press(state: tauri::State<'_, InputState>, key: String) -> Result<String, String> {
     use enigo::Key;
@@ -286,6 +303,7 @@ fn key_press(state: tauri::State<'_, InputState>, key: String) -> Result<String,
     })
 }
 
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn type_text(state: tauri::State<'_, InputState>, text: String) -> Result<String, String> {
     with_input(&state, |enigo| {
@@ -294,8 +312,9 @@ fn type_text(state: tauri::State<'_, InputState>, text: String) -> Result<String
     })
 }
 
-// ---------------- Desktop capture ----------------
+// ---------------- Desktop: screen capture ----------------
 
+#[cfg(not(target_os = "android"))]
 #[derive(Serialize)]
 pub struct Screenshot {
     data_uri: String,
@@ -303,8 +322,10 @@ pub struct Screenshot {
     height: u32,
 }
 
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn desktop_picture() -> Result<Screenshot, String> {
+    use base64::Engine as _;
     use image::codecs::png::PngEncoder;
     use image::{ExtendedColorType, ImageEncoder};
     let screens =
@@ -314,12 +335,7 @@ fn desktop_picture() -> Result<Screenshot, String> {
     let (w, h) = (shot.width(), shot.height());
     let mut png = Vec::new();
     PngEncoder::new(&mut png)
-        .write_image(
-            shot.as_raw(),
-            w,
-            h,
-            ExtendedColorType::Rgba8,
-        )
+        .write_image(shot.as_raw(), w, h, ExtendedColorType::Rgba8)
         .map_err(|e| format!("png encode failed: {e}"))?;
     let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
     Ok(Screenshot {
@@ -329,14 +345,34 @@ fn desktop_picture() -> Result<Screenshot, String> {
     })
 }
 
-// ---------------- Apps / URLs / notifications ----------------
+#[cfg(not(target_os = "android"))]
+#[derive(Serialize)]
+pub struct ScreenMetrics {
+    width: i32,
+    height: i32,
+}
 
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn screen_metrics(state: tauri::State<'_, InputState>) -> Result<ScreenMetrics, String> {
+    with_input(&state, |enigo| {
+        let (width, height) = enigo
+            .main_display()
+            .map_err(|e| format!("display query failed: {e}"))?;
+        Ok(ScreenMetrics { width, height })
+    })
+}
+
+// ---------------- Desktop: apps / URLs ----------------
+
+#[cfg(not(target_os = "android"))]
 #[derive(Serialize)]
 pub struct OkMsg {
     ok: bool,
     message: String,
 }
 
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn launch_app(name: String) -> OkMsg {
     let lowered = name.to_lowercase();
@@ -367,6 +403,7 @@ fn launch_app(name: String) -> OkMsg {
     }
 }
 
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn open_url(url: String) -> OkMsg {
     match open::that(url.clone()) {
@@ -381,46 +418,10 @@ fn open_url(url: String) -> OkMsg {
     }
 }
 
-#[tauri::command]
-fn notify(app: tauri::AppHandle, title: String, body: String) -> Result<String, String> {
-    use tauri_plugin_notification::NotificationExt;
-    app.notification()
-        .builder()
-        .title(title)
-        .body(body)
-        .show()
-        .map_err(|e| e.to_string())?;
-    Ok("Notification shown.".into())
-}
-
-// ---------------- Status ----------------
-
-#[tauri::command]
-fn desktop_status() -> String {
-    "desktop-bridge-online".to_string()
-}
-
-/// Display size in the same coordinate space `mouse_move` (Abs) uses —
-/// lets the frontend scale screenshot pixels to cursor coordinates exactly.
-#[derive(Serialize)]
-pub struct ScreenMetrics {
-    width: i32,
-    height: i32,
-}
-
-#[tauri::command]
-fn screen_metrics(state: tauri::State<'_, InputState>) -> Result<ScreenMetrics, String> {
-    with_input(&state, |enigo| {
-        let (width, height) = enigo
-            .main_display()
-            .map_err(|e| format!("display query failed: {e}"))?;
-        Ok(ScreenMetrics { width, height })
-    })
-}
-
 /// Launch ANY program, script or file by name or absolute path — not limited
 /// to the open_app mapping. Falls back to the platform shell so PATH entries,
 /// documents and folders resolve too.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn execute_command(command: String, args: Option<Vec<String>>) -> OkMsg {
     let arglist = args.unwrap_or_default();
@@ -458,12 +459,168 @@ fn execute_command(command: String, args: Option<Vec<String>>) -> OkMsg {
     }
 }
 
+// ---------------- Android: honest stubs ----------------
+// Android's security model doesn't let one app click/type/screenshot other
+// apps — these return clear replies so JARVIS explains instead of failing.
+
+#[cfg(target_os = "android")]
+fn android_unavailable(what: &str) -> String {
+    format!(
+        "{what} isn't possible on Android: the OS doesn't allow one app to control or capture another app's screen. On the Windows version of JARVIS this works fully. Here I can chat, run web tools, and use voice instead."
+    )
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn mouse_move(x: i32, y: i32, relative: bool) -> Result<String, String> {
+    Ok(android_unavailable(&format!(
+        "Moving the mouse to ({x}, {y}){}",
+        if relative { " relatively" } else { "" }
+    )))
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn mouse_click(button: String, kind: String) -> Result<String, String> {
+    Ok(android_unavailable(&format!("A {kind} {button}-click")))
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn mouse_scroll(amount: i32) -> Result<String, String> {
+    Ok(android_unavailable(&format!("Scrolling by {amount}")))
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn mouse_double_click() -> Result<String, String> {
+    Ok(android_unavailable("A double-click"))
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn mouse_drag(from_x: i32, from_y: i32, to_x: i32, to_y: i32, steps: Option<i32>) -> Result<String, String> {
+    Ok(android_unavailable(&format!(
+        "Dragging from ({from_x},{from_y}) to ({to_x},{to_y}) in {} steps",
+        steps.unwrap_or(25)
+    )))
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn mouse_draw(points: Vec<(i32, i32)>) -> Result<String, String> {
+    Ok(android_unavailable(&format!(
+        "Drawing a path through {} points",
+        points.len()
+    )))
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn key_press(key: String) -> Result<String, String> {
+    Ok(android_unavailable(&format!("Pressing the {key} key")))
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn type_text(text: String) -> Result<String, String> {
+    Ok(android_unavailable(&format!(
+        "Typing \"{}\"",
+        if text.chars().count() > 40 {
+            format!("{}…", text.chars().take(40).collect::<String>())
+        } else {
+            text
+        }
+    )))
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn desktop_picture() -> Result<serde_json::Value, String> {
+    Err(android_unavailable("Capturing the screen"))
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn screen_metrics() -> Result<serde_json::Value, String> {
+    Err(android_unavailable("Querying display metrics"))
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn launch_app(name: String) -> Result<serde_json::Value, String> {
+    Ok(serde_json::json!({
+        "ok": false,
+        "message": format!("Launching apps isn't available in the Android build yet (tried to open \"{name}\").")
+    }))
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn open_url(app: tauri::AppHandle, url: String) -> Result<serde_json::Value, String> {
+    // Real: hands the URL to Android, which opens it in the browser.
+    use tauri_plugin_opener::OpenerExt;
+    match app.opener().open_url(url.clone(), None::<&str>) {
+        Ok(_) => Ok(serde_json::json!({
+            "ok": true,
+            "message": format!("Opened {url} in your browser.")
+        })),
+        Err(e) => Ok(serde_json::json!({
+            "ok": false,
+            "message": format!("Couldn't open {url}: {e}")
+        })),
+    }
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn execute_command(command: String, args: Option<Vec<String>>) -> Result<serde_json::Value, String> {
+    let mut line = command.clone();
+    if let Some(a) = args {
+        if !a.is_empty() {
+            line.push(' ');
+            line.push_str(&a.join(" "));
+        }
+    }
+    Ok(serde_json::json!({
+        "ok": false,
+        "message": format!("Running local commands isn't available in the Android build yet (tried: {line}).")
+    }))
+}
+
+// ---------------- Notifications (all platforms) ----------------
+
+#[tauri::command]
+fn notify(app: tauri::AppHandle, title: String, body: String) -> Result<String, String> {
+    use tauri_plugin_notification::NotificationExt;
+    app.notification()
+        .builder()
+        .title(title)
+        .body(body)
+        .show()
+        .map_err(|e| e.to_string())?;
+    Ok("Notification shown.".into())
+}
+
+// ---------------- Status ----------------
+
+#[tauri::command]
+fn desktop_status() -> String {
+    "desktop-bridge-online".to_string()
+}
+
+// Both platforms define every command name, so one flat handler list works
+// everywhere — the implementations just differ per platform.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_notification::init())
-        .manage(InputState(Mutex::new(None)))
+        .plugin(tauri_plugin_notification::init());
+
+    #[cfg(not(target_os = "android"))]
+    let builder = builder.manage(InputState(Mutex::new(None)));
+
+    builder
         .invoke_handler(tauri::generate_handler![
             system_info,
             system_info_stream,
@@ -479,9 +636,9 @@ pub fn run() {
             launch_app,
             open_url,
             execute_command,
+            screen_metrics,
             notify,
-            desktop_status,
-            screen_metrics
+            desktop_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
