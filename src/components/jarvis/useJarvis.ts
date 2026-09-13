@@ -52,6 +52,23 @@ function uid() {
 }
 
 const LLM_KEY = "jarvis.llm.config.v1";
+const VOICE_KEY = "jarvis.voice.v1";
+
+/** Voice settings that survive restarts (speed, autoSpeak…). */
+interface VoicePrefs {
+  voice?: string;
+  speed?: number;
+  autoSpeak?: boolean;
+}
+
+function loadVoicePrefs(): VoicePrefs {
+  try {
+    const raw = localStorage.getItem(VOICE_KEY);
+    return raw ? (JSON.parse(raw) as VoicePrefs) : {};
+  } catch {
+    return {};
+  }
+}
 
 export function useJarvis() {
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -72,9 +89,11 @@ export function useJarvis() {
     progress: null,
     error: null,
   });
-  const [voice, setVoice] = useState("af_heart");
-  const [speed, setSpeed] = useState(1);
-  const [autoSpeak, setAutoSpeak] = useState(true);
+  const [voice, setVoice] = useState(() => loadVoicePrefs().voice ?? "bm_george");
+  const [speed, setSpeed] = useState(() => loadVoicePrefs().speed ?? 1);
+  const [autoSpeak, setAutoSpeak] = useState(
+    () => loadVoicePrefs().autoSpeak ?? true,
+  );
 
   // LLM / brain
   const [llm, setLlm] = useState<LlmConfig>(() => {
@@ -133,6 +152,16 @@ export function useJarvis() {
       // ignore
     }
   }, [llm]);
+
+  // persist voice prefs (voice pick + speed + auto-speak survive restarts)
+  useEffect(() => {
+    try {
+      const prefs: VoicePrefs = { voice, speed, autoSpeak };
+      localStorage.setItem(VOICE_KEY, JSON.stringify(prefs));
+    } catch {
+      // ignore
+    }
+  }, [voice, speed, autoSpeak]);
 
   // ---------- session continuity: welcome-back ----------
   const bootGapRef = useRef<number | null | undefined>(undefined);

@@ -22,13 +22,15 @@ export interface VoiceOption {
 }
 
 export const VOICES: VoiceOption[] = [
-  { id: "af_heart", label: "Heart · US female" },
-  { id: "af_bella", label: "Bella · US female" },
+  // George: calm, refined British male — the closest match to JARVIS's
+  // Iron-Man voice, and the default.
+  { id: "bm_george", label: "George · UK male ★ JARVIS" },
   { id: "am_michael", label: "Michael · US male" },
   { id: "am_fenrir", label: "Fenrir · US male" },
   { id: "am_puck", label: "Puck · US male" },
+  { id: "af_heart", label: "Heart · US female" },
+  { id: "af_bella", label: "Bella · US female" },
   { id: "bf_emma", label: "Emma · UK female" },
-  { id: "bm_george", label: "George · UK male" },
 ];
 
 export interface SpeakHandle {
