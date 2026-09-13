@@ -43,9 +43,7 @@ export function ModelSettings({
 }: ModelSettingsProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const preset =
-    PRESETS.find((p) => p.id === config.presetId) ??
-    PRESETS.find((p) => p.provider === config.provider && !p.cloud) ??
-    PRESETS[0];
+    PRESETS.find((p) => p.id === config.presetId) ?? PRESETS[0];
 
   const applyPreset = (id: string) => {
     const p = PRESETS.find((x) => x.id === id);
@@ -59,11 +57,11 @@ export function ModelSettings({
         <div>
           <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
             <BrainCircuit className="size-3.5" />
-            Local LLM brain
+            LLM brain
           </p>
           <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-            Route requests through your own model server — Ollama, KoboldCpp,
-            LM Studio or llama.cpp.
+            Keyless cloud brains work instantly — or plug in your own local
+            server (Ollama, KoboldCpp, LM Studio, llama.cpp) for 100% offline.
           </p>
         </div>
         <Button
@@ -87,7 +85,7 @@ export function ModelSettings({
             onClick={() => applyPreset(p.id)}
             className={cn(
               "rounded-xl border px-3 py-2 text-left transition-colors",
-              config.provider === p.provider
+              config.presetId === p.id
                 ? "border-primary/40 bg-primary/10"
                 : "border-border bg-card hover:bg-muted/60",
             )}

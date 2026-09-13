@@ -1,4 +1,6 @@
-import { Activity, Download, Mic, Volume2 } from "lucide-react";
+import { Activity, Download, Mic, Palette, Volume2 } from "lucide-react";
+import { useState } from "react";
+import { ACCENTS, applyAccent, loadAccent } from "@/lib/jarvis/theme";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -79,6 +81,7 @@ export function VoiceControls({
 }: VoiceControlsProps) {
   const anyLoading = engines.tts === "loading" || engines.stt === "loading";
   const bothReady = engines.tts === "ready" && engines.stt === "ready";
+  const [accent, setAccent] = useState(loadAccent);
 
   return (
     <div className="space-y-4 p-4">
@@ -200,6 +203,38 @@ export function VoiceControls({
           <Mic className="size-3" />
           {autoSpeak ? "On" : "Off"}
         </Button>
+      </div>
+
+      {/* Accent color — recolors the whole HUD instantly */}
+      <div className="space-y-2.5">
+        <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          <Palette className="size-3.5" />
+          Accent
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {ACCENTS.map((a) => (
+            <button
+              key={a.id}
+              title={a.label}
+              aria-label={`Accent: ${a.label}`}
+              onClick={() => {
+                setAccent(a);
+                applyAccent(a);
+              }}
+              className={cn(
+                "size-7 rounded-full ring-2 transition-transform hover:scale-110",
+                accent.id === a.id ? "ring-foreground/70" : "ring-transparent",
+              )}
+              style={{
+                background: `radial-gradient(circle at 35% 30%, oklch(0.9 0.08 ${a.hue}), oklch(0.55 0.16 ${a.hue}))`,
+                boxShadow: `0 0 10px oklch(0.7 0.14 ${a.hue} / 0.5)`,
+              }}
+            />
+          ))}
+        </div>
+        <p className="text-[10px] text-muted-foreground">
+          {accent.label} — recolors panels, orb and glow everywhere.
+        </p>
       </div>
     </div>
   );

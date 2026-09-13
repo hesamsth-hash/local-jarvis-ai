@@ -159,7 +159,7 @@ export default function Landing() {
           className="mt-8 flex flex-wrap items-center justify-center gap-3"
         >
           <Button asChild size="lg" className="ring-glow h-12 rounded-full px-7 text-sm font-medium">
-            <a href="/auth">
+            <a href="/dashboard">
               Launch the console
               <ArrowRight className="ml-1 size-4" />
             </a>
@@ -189,8 +189,13 @@ export default function Landing() {
           className="relative mt-14"
         >
           <div className="ring-glow relative flex size-56 items-center justify-center rounded-full sm:size-72">
-            <div className="orb-ring orb-ring-slow absolute inset-0 rounded-full" />
-            <div className="orb-ring-reverse absolute inset-4 rounded-full" />
+            <svg viewBox="0 0 200 200" className="orb-ring-slow absolute inset-0 size-full text-primary/45" aria-hidden>
+              <circle cx="100" cy="100" r="97" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="2 7" />
+            </svg>
+            <svg viewBox="0 0 200 200" className="orb-ring-reverse absolute inset-2 size-full text-primary/60" aria-hidden>
+              <circle cx="100" cy="100" r="90" fill="none" stroke="currentColor" strokeWidth="5" strokeLinecap="round" strokeDasharray="120 446" />
+              <circle cx="100" cy="100" r="82" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeDasharray="24 490" transform="rotate(210 100 100)" />
+            </svg>
             <div className="orb-core orb-pulse flex size-36 items-center justify-center rounded-full sm:size-44">
               <span className="font-mono text-[10px] uppercase tracking-[0.35em] text-white/90">
                 online
@@ -322,7 +327,7 @@ export default function Landing() {
               files never leave this device.
             </p>
             <Button asChild size="lg" className="ring-glow mt-7 h-12 rounded-full px-8 text-sm font-medium">
-              <a href="/auth">
+              <a href="/dashboard">
                 Start locally
                 <ArrowRight className="ml-1 size-4" />
               </a>

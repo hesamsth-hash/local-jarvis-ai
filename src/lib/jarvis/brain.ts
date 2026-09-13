@@ -28,6 +28,7 @@ import {
 import {
   continueReply,
   extractFileName,
+  isTrivialCommand,
   logActivity,
   stampSeen,
 } from "./memory";
@@ -64,7 +65,7 @@ Offline (no LLM needed):
 • "speak <text>" — Kokoro voice · "start/stop listening" — Whisper
 • "time", "date", "status", "help"
 
-With a local LLM connected (Ollama / Kobold / LM Studio) you also get:
+With a brain connected (keyless cloud by default — or your own Ollama / Kobold / LM Studio) you also get:
 • Web search, weather, YouTube & browser control
 • System monitor, screen & camera capture, app launching
 • Code review, developer agent, file processing
@@ -72,7 +73,7 @@ With a local LLM connected (Ollama / Kobold / LM Studio) you also get:
 • I can BUILD new tools on the fly — if I'm missing a capability, say so and
   I'll write + install a small plugin for it right now ("make me a tool that …")
 
-Connect one in the Brain tab → I'll route your requests through your own model.`;
+Connect one in the Brain tab → I'll route your requests through it.`;
 
 function stripQuotes(s: string) {
   return s.replace(/^["']|["']$/g, "").trim();
@@ -89,9 +90,13 @@ export async function runBrain(
   const raw = input.trim();
   const text = raw.toLowerCase();
 
-  // continuity: record what the user is doing (local-only activity log)
+  // continuity: record what the user is doing (local-only activity log).
+  // Filler commands ("bye", "ok", "thanks") don't pollute the log —
+  // they used to resurface as "where we left off" on the next launch.
   stampSeen();
-  logActivity("command", `asked: ${raw.slice(0, 120)}`, extractFileName(raw));
+  if (!isTrivialCommand(raw)) {
+    logActivity("command", `asked: ${raw.slice(0, 120)}`, extractFileName(raw));
+  }
 
   // ---------- always-offline intents ----------
   if (
@@ -149,6 +154,22 @@ export async function runBrain(
     return {
       reply: "At your service. All systems are running locally — how can I help?",
       intent: "greet",
+      ok: true,
+    };
+  }
+
+  // Closings: short friendly goodbye + stop — nothing more.
+  if (
+    /^(bye|goodbye|good night|goodnight|see you|see ya|later|that'?s all|nothing else|shut ?down|power (down|off)|stand ?by)\b[\s!.,'"]*$/i.test(
+      text,
+    ) ||
+    /^(ok|okay|alright|cool|nice|great|thanks|thank you|ty)\b[\s!.,'"]*$/i.test(text)
+  ) {
+    return {
+      reply: /night|bye|goodbye|later|see (you|ya)|shut|power|stand/i.test(text)
+        ? "Goodbye, Sir. Going to standby — say anything to wake me."
+        : "At your service.",
+      intent: "session.close",
       ok: true,
     };
   }
@@ -344,7 +365,7 @@ export async function runBrain(
   return {
     reply: deps.llmReady
       ? 'I couldn\'t map that to a tool. Try naming the capability, e.g. "weather in Berlin", "search quantum computing", "screen", or "remind me in 20 minutes to stretch" — or say "make me a tool that …" and I\'ll build one for it.'
-      : 'I\'m in offline intent mode right now — try "help" for my skills, or connect a local LLM in the Brain tab (Ollama / Kobold / LM Studio) to unlock search, weather, code review, self-installed tools and more.',
+      : 'The keyless brain seems unreachable right now (offline, or the free service is busy) — I\'m in local intent mode. Try "help" for what still works, or pick another brain in the Brain tab (LLM7.io, Kilo, OVHcloud — all keyless — or your own Ollama).',
     intent: "unknown",
     ok: true,
   };

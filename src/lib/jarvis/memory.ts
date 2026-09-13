@@ -174,8 +174,28 @@ export function logActivity(
   saveActivity(entries);
 }
 
+/**
+ * Commands not worth remembering ("bye", "ok", "thanks"…) — they'd pollute
+ * both the activity log and the welcome-back message.
+ */
+const TRIVIAL =
+  /^(bye|goodbye|good night|gn|ok|okay|k|kk|okey|thanks|thank you|ty|np|hi|hello|hey|yo|sup|cool|nice|great|alright|done|yes|yeah|yep|no|nope)\b[\s!.,'"]*$/i;
+
+export function isTrivialCommand(text: string): boolean {
+  const t = text.trim();
+  return t.length <= 25 && TRIVIAL.test(t);
+}
+
+/** Recent activity, ignoring filler commands like "ok" / "bye". */
+function substantiveActivity(): ActivityEntry[] {
+  return loadActivity().filter(
+    (a) =>
+      !(a.kind === "command" && isTrivialCommand(a.detail.replace(/^asked:\s*/i, ""))),
+  );
+}
+
 export function recentActivity(n = 5): ActivityEntry[] {
-  return loadActivity().slice(0, n);
+  return substantiveActivity().slice(0, n);
 }
 
 export function lastFilePath(): string | null {
@@ -212,11 +232,24 @@ function ago(ms: number): string {
 /**
  * "Welcome back" message based on the previous session's activity.
  * Pass the gap returned by stampSeen() (it stamps before this reads).
- * Empty string when there's no history (first run).
+ * Empty string when:
+ *  - there's no (substantive) history — first run, or only filler commands
+ *  - the app was closed for less than ~5 minutes (quick restart — no drama)
+ *  - we already welcomed the user back in the last 30 minutes
  */
+const WELCOME_KEY = "jarvis.welcome.v1";
+
 export function resumeSummary(gapMs?: number): string {
-  const acts = loadActivity();
+  const acts = substantiveActivity();
   if (!acts.length) return "";
+  if (typeof gapMs === "number" && gapMs < 5 * 60_000) return "";
+  try {
+    const last = Number(localStorage.getItem(WELCOME_KEY) ?? "0");
+    if (Number.isFinite(last) && Date.now() - last < 30 * 60_000) return "";
+    localStorage.setItem(WELCOME_KEY, String(Date.now()));
+  } catch {
+    // storage unavailable — still show the summary once
+  }
   const gap = typeof gapMs === "number" ? ago(gapMs) : "earlier";
   const lines = acts
     .slice(0, 3)
@@ -232,7 +265,7 @@ export function resumeSummary(gapMs?: number): string {
 
 /** Offline handler for "continue" / "where were we". */
 export function continueReply(): string {
-  const acts = loadActivity();
+  const acts = substantiveActivity();
   if (!acts.length) {
     return "We're starting fresh — nothing to continue yet. What should we work on?";
   }

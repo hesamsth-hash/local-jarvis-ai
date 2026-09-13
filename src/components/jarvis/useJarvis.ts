@@ -59,7 +59,7 @@ export function useJarvis() {
       id: "welcome",
       role: "jarvis",
       content:
-        'JARVIS online. First click "Download engines" in the Voice tab (~40 MB, cached after that). For the full brain — web search, weather, code review, screen capture — connect a local LLM in the Brain tab (Ollama / KoboldCpp / LM Studio). Say "help" anytime.',
+        'JARVIS online. Voice engines are loading (cached after the first run) and the keyless brain is live — web search, weather, tools, all working right now. Want 100% offline? Connect Ollama / KoboldCpp in the Brain tab. Say "help" anytime.',
       createdAt: Date.now(),
     },
   ]);
@@ -181,6 +181,14 @@ export function useJarvis() {
       )
       .catch(() => undefined);
   }, []);
+
+  // Cold start: engines now load on launch — cached after the first download,
+  // so voice (and the orb's speaking animation) work without clicking
+  // "Download engines" every session. First-ever run downloads in background
+  // while the console is already usable.
+  useEffect(() => {
+    loadEngines();
+  }, [loadEngines]);
 
   // ---------- LLM ----------
   const handleTestLlm = useCallback(

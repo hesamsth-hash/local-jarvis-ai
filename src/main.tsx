@@ -6,11 +6,13 @@ import { InstrumentationProvider } from "@/instrumentation.tsx";
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { ConvexReactClient } from "convex/react";
 import { StrictMode, useEffect, lazy, Suspense } from "react";
+import { useAuth } from "@/hooks/use-auth";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router";
 import "./index.css";
 import "./types/global.d.ts";
 import { initPwa } from "@/lib/pwa";
+import { initTheme } from "@/lib/jarvis/theme";
 
 // Lazy load route components for better code splitting
 const Landing = lazy(() => import("./pages/Landing.tsx"));
@@ -42,6 +44,14 @@ const convex = new ConvexReactClient(
 
 
 
+/** Signed-in users launch straight into the console — the landing page is for signed-out visitors. */
+function LandingGate() {
+  const { isLoading, isAuthenticated } = useAuth();
+  if (isLoading) return <RouteLoading />;
+  if (isAuthenticated) return <Navigate to="/dashboard" replace />;
+  return <Landing />;
+}
+
 function RouteSyncer() {
   const location = useLocation();
   useEffect(() => {
@@ -67,6 +77,7 @@ function RouteSyncer() {
 
 
 initPwa();
+initTheme(); // accent color + perf-lite before first paint
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -77,7 +88,7 @@ createRoot(document.getElementById("root")!).render(
           <RouteSyncer />
           <Suspense fallback={<RouteLoading />}>
             <Routes>
-              <Route path="/" element={<Landing />} />
+              <Route path="/" element={IS_NATIVE ? <Navigate to="/dashboard" replace /> : <LandingGate />} />
               <Route
                 path="/auth"
                 element={

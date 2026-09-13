@@ -20,14 +20,16 @@ export interface LlmConfig {
   presetId?: string;
 }
 
+// Default brain = keyless cloud (Pollinations): zero setup, works instantly.
+// Users who want 100% offline can switch to Ollama/Kobold in the Brain tab.
 export const DEFAULT_LLM_CONFIG: LlmConfig = {
-  enabled: false,
-  provider: "ollama",
-  url: "http://localhost:11434",
+  enabled: true,
+  provider: "pollinations",
+  url: "https://text.pollinations.ai",
   model: "",
   visionModel: "",
   apiKey: "",
-  presetId: "ollama",
+  presetId: "pollinations",
 };
 
 export const PRESETS: {
@@ -38,9 +40,56 @@ export const PRESETS: {
   hint: string;
   /** Cloud endpoint — needs an API key instead of a local server. */
   cloud?: boolean;
-  /** Cloud endpoint that needs NO key at all (e.g. Pollinations). */
+  /** Cloud endpoint that needs NO key and NO signup at all. */
   keyless?: boolean;
 }[] = [
+  // ---- Keyless: no key, no account, straight to work ----
+  {
+    id: "pollinations",
+    label: "Pollinations ✨ keyless",
+    provider: "pollinations",
+    url: "https://text.pollinations.ai",
+    hint: "no key, no signup — free community AI (rate-limited). Zero setup: pick it and go.",
+    cloud: true,
+    keyless: true,
+  },
+  {
+    id: "llm7",
+    label: "LLM7.io ✨ keyless",
+    provider: "openai-compatible",
+    url: "https://api.llm7.io/v1",
+    hint: "no key, no signup — anonymous tier 10 req/min · 60/hr (gpt-oss:20b, mistral-nemo, minimax…)",
+    cloud: true,
+    keyless: true,
+  },
+  {
+    id: "kilo",
+    label: "Kilo Code ✨ keyless",
+    provider: "openai-compatible",
+    url: "https://api.kilo.ai/api/gateway",
+    hint: "free model pool, NO key — 200 req/hr. Try model: openrouter/free or nvidia/nemotron-3-super-120b-a12b:free",
+    cloud: true,
+    keyless: true,
+  },
+  {
+    id: "ovh",
+    label: "OVHcloud ✨ keyless",
+    provider: "openai-compatible",
+    url: "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
+    hint: "EU-hosted, no key, no signup — 2 req/min per model (gpt-oss-120b, Qwen3, Llama-3.3-70B…)",
+    cloud: true,
+    keyless: true,
+  },
+  {
+    id: "keylessai",
+    label: "KeylessAI ✨ keyless",
+    provider: "openai-compatible",
+    url: "https://keylessai.thryx.workers.dev/v1",
+    hint: "free OpenAI-compatible endpoint, no key — if it's down, paste the current /v1 URL from their npm page (search \"keylessai npm\") into the address field",
+    cloud: true,
+    keyless: true,
+  },
+  // ---- Local servers: 100% offline ----
   {
     id: "ollama",
     label: "Ollama",
@@ -70,11 +119,19 @@ export const PRESETS: {
     hint: "llama-server --port 8080",
   },
   {
-    id: "fireworks",
-    label: "Fireworks ⚡ cloud",
+    id: "omniroute",
+    label: "OmniRoute gateway",
     provider: "openai-compatible",
-    url: "https://api.fireworks.ai/inference/v1",
-    hint: "paste your Fireworks API key below — fastest hosted open-source models",
+    url: "http://localhost:20128/v1",
+    hint: "run OmniRoute locally (open-source AI gateway) — it pools your AI accounts into one local OpenAI-compatible endpoint",
+  },
+  // ---- Keyed cloud: free tiers with a key ----
+  {
+    id: "openrouter",
+    label: "OpenRouter ☁ cloud",
+    provider: "openai-compatible",
+    url: "https://openrouter.ai/api/v1",
+    hint: "one key, 200+ models incl. free GLM/DeepSeek (ids ending in :free) — key from openrouter.ai/keys",
     cloud: true,
   },
   {
@@ -86,37 +143,12 @@ export const PRESETS: {
     cloud: true,
   },
   {
-    id: "openrouter",
-    label: "OpenRouter ☁ cloud",
+    id: "fireworks",
+    label: "Fireworks ⚡ cloud",
     provider: "openai-compatible",
-    url: "https://openrouter.ai/api/v1",
-    hint: "one key, 200+ models incl. free GLM/DeepSeek (ids ending in :free) — key from openrouter.ai/keys",
+    url: "https://api.fireworks.ai/inference/v1",
+    hint: "paste your Fireworks API key below — fastest hosted open-source models",
     cloud: true,
-  },
-  {
-    id: "pollinations",
-    label: "Pollinations ✨ keyless",
-    provider: "pollinations",
-    url: "https://text.pollinations.ai",
-    hint: "no key, no signup — free community AI (rate-limited). Zero setup: pick it and go.",
-    cloud: true,
-    keyless: true,
-  },
-  {
-    id: "keylessai",
-    label: "KeylessAI ✨ keyless",
-    provider: "openai-compatible",
-    url: "https://keylessai.thryx.workers.dev/v1",
-    hint: "free OpenAI-compatible endpoint, no key — if it's down, paste the current /v1 URL from their npm page (search \"keylessai npm\") into the address field",
-    cloud: true,
-    keyless: true,
-  },
-  {
-    id: "omniroute",
-    label: "OmniRoute gateway",
-    provider: "openai-compatible",
-    url: "http://localhost:20128/v1",
-    hint: "run OmniRoute locally (open-source AI gateway) — it pools your AI accounts into one local OpenAI-compatible endpoint",
   },
 ];
 
@@ -161,7 +193,12 @@ export async function testConnection(cfg: LlmConfig): Promise<boolean> {
     } else if (cfg.provider === "pollinations") {
       await fetchJson(`${normalizeUrl(cfg.url)}/models`, undefined, 6000);
     } else {
-      await fetchJson(`${apiBase(cfg.url)}/v1/models`, { headers: authHeaders(cfg) }, 4000);
+      try {
+        await fetchJson(`${apiBase(cfg.url)}/v1/models`, { headers: authHeaders(cfg) }, 4000);
+      } catch {
+        // Some gateways serve the catalog without the /v1 prefix (Kilo…).
+        await fetchJson(`${normalizeUrl(cfg.url)}/models`, { headers: authHeaders(cfg) }, 4000);
+      }
     }
     return true;
   } catch {
@@ -194,9 +231,29 @@ export async function listModels(cfg: LlmConfig): Promise<ModelInfo[]> {
       size: m.size ? `${(m.size / 1e9).toFixed(1)} GB` : undefined,
     }));
   }
-  const data = await fetchJson(`${apiBase(cfg.url)}/v1/models`, { headers: authHeaders(cfg) });
-  const models = (data as { data?: { id: string }[] }).data ?? [];
-  return models.map((m) => ({ id: m.id }));
+  try {
+    const data = await fetchJson(`${apiBase(cfg.url)}/v1/models`, { headers: authHeaders(cfg) });
+    const models = (data as { data?: { id: string }[] }).data ?? [];
+    return models.map((m) => ({ id: m.id }));
+  } catch {
+    // Some gateways serve /models without the /v1 prefix (Kilo, others) —
+    // tolerate both shapes before giving up.
+    const data = await fetchJson(`${normalizeUrl(cfg.url)}/models`, { headers: authHeaders(cfg) });
+    const raw = (data as unknown) ?? [];
+    const arr: unknown[] = Array.isArray(raw)
+      ? raw
+      : ((raw as { data?: unknown[]; models?: unknown[] }).data ??
+        (raw as { models?: unknown[] }).models ??
+        []);
+    return arr
+      .map((m) => {
+        if (typeof m === "string") return { id: m };
+        const o = m as { id?: string; name?: string };
+        const id = o.id ?? o.name;
+        return id ? { id } : null;
+      })
+      .filter((m): m is ModelInfo => m !== null);
+  }
 }
 
 const SYSTEM_PROMPT = `You are JARVIS, a local personal assistant running on the user's own machine.
@@ -282,21 +339,34 @@ export async function llmChat(
     if (!content) throw new Error("Empty response from Ollama");
     return content;
   }
-  const data = await fetchJson(`${apiBase(url)}/v1/chat/completions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders(cfg) },
-    body: JSON.stringify({
-      model: cfg.model || "local-model",
-      messages: messages.map((m) =>
-        m.images?.length && m.contentParts
-          ? { role: m.role, content: m.contentParts }
-          : m,
-      ),
-      temperature: opts.temperature ?? 0.4,
-      max_tokens: opts.maxTokens ?? 400,
-      stream: false,
-    }),
-  }, 120000);
+  const body = JSON.stringify({
+    model: cfg.model || "local-model",
+    messages: messages.map((m) =>
+      m.images?.length && m.contentParts
+        ? { role: m.role, content: m.contentParts }
+        : m,
+    ),
+    temperature: opts.temperature ?? 0.4,
+    max_tokens: opts.maxTokens ?? 400,
+    stream: false,
+  });
+  const headers = { "Content-Type": "application/json", ...authHeaders(cfg) };
+  // Gateways disagree on the /v1 prefix — try with it, then without.
+  let data: unknown;
+  try {
+    data = await fetchJson(`${apiBase(url)}/v1/chat/completions`, {
+      method: "POST",
+      headers,
+      body,
+    }, 120000);
+  } catch (e) {
+    if (!(e instanceof Error && /HTTP 40[40]/.test(e.message))) throw e;
+    data = await fetchJson(`${normalizeUrl(url)}/chat/completions`, {
+      method: "POST",
+      headers,
+      body,
+    }, 120000);
+  }
   const content = (data as {
     choices?: { message?: { content?: string } }[];
   }).choices?.[0]?.message?.content;
