@@ -429,10 +429,10 @@ export default function Dashboard() {
   );
 }
 
-// Windows auto-start — strictly opt-in, default OFF. Browser/PWA builds never show it.
+// Windows auto-start — strictly opt-in, default OFF. Browser/PWA and Android never show it.
 function AutostartToggle() {
   const [enabled, setEnabled] = useState(false);
-  const [available] = useState(() => isDesktop());
+  const [available] = useState(() => isDesktop() && !/android/i.test(navigator.userAgent));
 
   useEffect(() => {
     if (!available) return;

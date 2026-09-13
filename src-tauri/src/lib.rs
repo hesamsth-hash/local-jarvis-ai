@@ -923,12 +923,15 @@ fn desktop_status() -> String {
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_notification::init())
-        // autostart is opt-in only — the user flips it in Settings; never on by default
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
-        ));
+        .plugin(tauri_plugin_notification::init());
+
+    // autostart is desktop-only (no concept of "launch at sign-in" here) and
+    // opt-in — the user flips it in Settings; never on by default.
+    #[cfg(not(target_os = "android"))]
+    let builder = builder.plugin(tauri_plugin_autostart::init(
+        tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+        None,
+    ));
 
     #[cfg(not(target_os = "android"))]
     let builder = builder.manage(InputState(Mutex::new(None)));
