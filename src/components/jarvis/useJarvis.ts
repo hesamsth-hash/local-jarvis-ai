@@ -638,35 +638,33 @@ export function useJarvis() {
             const mod = await import("@/lib/jarvis/brain-fs");
             const listing = await mod.runFsAction("list", () => connectedRef.current);
             if (!listing.ok) return listing;
-            // args: "*.jpg to trip-" | "prefix screenshot to shot-" | "replace IMG_ with trip-"
-            const m = a.match(/(?:^|\s)\*?\.?(\*\.[a-z0-9]+)\s+to\s+(.+)$/i) ?? a.match(/replace\s+(.+?)\s+with\s+(.+)$/i);
-            if (!m)
+            // args: "*.jpg to trip-" renames every jpg → trip-1.jpg, trip-2.jpg…
+            const globM = a.match(/(\*\.[a-z0-9]+)\s+to\s+(.+)$/i);
+            // args: "replace IMG_ with trip-" swaps the pattern in place
+            const repM = a.match(/replace\s+(.+?)\s+with\s+(.+)$/i);
+            if (!globM && !repM)
               return {
                 ok: false,
                 data: 'Try: "bulk rename *.jpg to trip-" — every matching file becomes trip-1.jpg, trip-2.jpg… (or "replace IMG_ with trip-" to swap the pattern in place).',
               };
-            const pattern = m[1]!.toLowerCase();
-            const replacement = m[2]!.replace(/["']/g, "").trim();
             const { listDir, renamePath, exists } = await import("@/lib/jarvis/fs-tools");
             const { entries } = await listDir("");
+            const find = repM ? repM[1]!.replace(/["']/g, "").trim() : "";
+            const base = (globM ? globM[2] : repM?.[2])!.replace(/["']/g, "").trim();
             let done = 0;
             let n = 1;
             for (const e of entries) {
               if (e.kind !== "file") continue;
               const lower = e.name.toLowerCase();
-              const matches = pattern === "replace"
-                ? lower.includes(replacement.replace(/\*/g, ""))
-                : false;
               let target: string | null = null;
-              if (pattern.startsWith("*.") && lower.endsWith(pattern.slice(1))) {
-                const ext = e.name.slice(e.name.lastIndexOf("."));
-                target = `${replacement}${n}${ext}`;
-              } else if (matches) {
-                target = e.name.replace(replacement.replace(/\*/g, ""), replacement);
+              if (globM) {
+                const ext = globM[1]!.slice(1); // ".jpg"
+                if (lower.endsWith(ext)) target = `${base}${n}${ext}`;
+              } else if (find && lower.includes(find.toLowerCase())) {
+                target = e.name.split(find).join(base);
               }
               if (!target || target === e.name) continue;
-              // never overwrite an existing file
-              if (await exists(target)) continue;
+              if (await exists(target)) continue; // never overwrite
               await renamePath(e.name, target);
               done++;
               n++;
@@ -675,10 +673,9 @@ export function useJarvis() {
               ok: done > 0,
               data:
                 done > 0
-                  ? `Renamed ${done} file${done === 1 ? "" : "s"} using "${replacement}". Refreshing the deck.`
-                  : `No files matched — check the pattern (e.g. "bulk rename *.jpg to trip-").`,
-              refreshFs: true,
-            } as ToolResult & { refreshFs?: boolean };
+                  ? `Renamed ${done} file${done === 1 ? "" : "s"}. The file deck refreshes now.`
+                  : `No files matched that pattern — bulk rename works on the connected workspace's current folder.`,
+            };
           }
           // ----- Focus mode (HUD timer) -----
           case "focus": {

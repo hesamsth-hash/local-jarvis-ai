@@ -69,7 +69,10 @@ Offline (no LLM needed):
 • "rename <a> to <b>" · "move <a> to <dir>" · "delete <path>" · "undo delete"
 • "remember that …" — persistent memory · "what do you remember?" · "forget …"
 • "speak <text>" — Kokoro voice · "start/stop listening" — Whisper
-• "time", "date", "status", "help"
+• "focus 25" — focus timer with a ping when it ends · "export transcript"
+• "battery" — device health (real values on rooted Android)
+• "bulk rename *.jpg to trip-" — rename all matching files at once
+• "continue" — pick up where we left off · "time", "date", "status", "help"
 
 With a brain connected (keyless cloud by default — or your own Ollama / Kobold / LM Studio) you also get:
 • Web search, weather, YouTube & browser control

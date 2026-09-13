@@ -41,6 +41,10 @@ export default function Dashboard() {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const [booting, setBooting] = useState(!isDesktop());
   const [sysInfo, setSysInfo] = useState<DesktopSystemInfo | null>(null);
+  // Greeting + tagline are picked ONCE per session — not per render. With the
+  // live stats chip re-rendering every 2s, per-render picks would flicker.
+  const [greet] = useState(() => greeting());
+  const [tagline] = useState(() => pick(TAGLINES));
 
   // Live CPU/RAM from the native bridge (desktop + rooted Android stream every 2s).
   useEffect(() => {
@@ -175,9 +179,9 @@ export default function Dashboard() {
                 // system online
               </p>
               <h1 className="font-display text-xl font-semibold tracking-wide sm:text-2xl">
-                {greeting()}, {user?.name?.split(" ")[0] ?? "Sir"}
+                {greet}, {user?.name?.split(" ")[0] ?? "Sir"}
               </h1>
-              <p className="max-w-md text-sm text-muted-foreground">{pick(TAGLINES)}</p>
+              <p className="max-w-md text-sm text-muted-foreground">{tagline}</p>
               <div className="mt-2 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
                 <HudChip icon={ShieldCheck} label="Privacy" value="100% local" />
                 <HudChip
@@ -526,10 +530,10 @@ const BOOT_LINES = [
 
 // Rotating greeting openers (time-aware pick, randomized per visit).
 const GREETINGS: Record<string, string[]> = {
-  morning: ["Good morning", "Morning", "Rise and shine"],
-  afternoon: ["Good afternoon", "Afternoon", "Welcome back"],
-  evening: ["Good evening", "Evening", "Working late"],
-  night: ["Burning the midnight oil", "Late shift", "Still up"],
+  morning: ["Good morning", "Morning", "Rise and shine", "Top of the morning"],
+  afternoon: ["Good afternoon", "Afternoon", "Welcome back", "Good to see you"],
+  evening: ["Good evening", "Evening", "Working late", "Good to have you back"],
+  night: ["Burning the midnight oil", "Late shift", "Still up", "The night watch begins"],
 };
 
 // Rotating subtitle lines under the greeting.
@@ -539,6 +543,11 @@ const TAGLINES = [
   "Listening, thinking, acting — locally.",
   "No cloud in the loop unless you ask for one.",
   "Every tool on this panel runs on-device.",
+  "Speech, hearing, memory — none of it leaves this machine.",
+  "Your files, your model, your rules.",
+  "Offline-first: pull the plug and I keep working.",
+  "Kokoro speaks, Whisper listens — right on this chip.",
+  "A local core with real hands: files, input, screen.",
 ];
 
 function pick<T>(arr: T[]): T {
