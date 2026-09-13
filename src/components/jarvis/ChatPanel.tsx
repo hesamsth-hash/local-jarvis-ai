@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import {
   Bot,
   CheckCircle2,
+  ChevronRight,
   FileText,
   Sparkles,
   Terminal,
@@ -18,7 +19,7 @@ interface ChatPanelProps {
 
 function IntentChip({ label }: { label: string }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-medium text-primary ring-1 ring-primary/20">
+    <span className="hud-chip inline-flex items-center gap-1 rounded-sm px-2 py-0.5 font-mono text-[10px] font-medium">
       <Sparkles className="size-3" />
       {label}
     </span>
@@ -48,10 +49,10 @@ export function ChatPanel({ messages, busy }: ChatPanelProps) {
             >
               <span
                 className={cn(
-                  "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg ring-1",
+                  "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-sm ring-1",
                   isUser
-                    ? "bg-muted text-foreground ring-border"
-                    : "bg-primary/10 text-primary ring-primary/20",
+                    ? "border-amber-400/40 bg-amber-400/10 text-amber-500 ring-amber-400/30"
+                    : "hud-chip",
                 )}
               >
                 {isUser ? (
@@ -68,12 +69,12 @@ export function ChatPanel({ messages, busy }: ChatPanelProps) {
               >
                 <div
                   className={cn(
-                    "rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
+                    "rounded-sm px-3.5 py-2.5 text-sm leading-relaxed",
                     isUser
-                      ? "rounded-tr-sm bg-primary text-primary-foreground"
+                      ? "border border-amber-400/30 bg-amber-400/10 text-amber-800 dark:text-amber-200"
                       : isSystem
-                        ? "rounded-tl-sm bg-muted text-muted-foreground"
-                        : "rounded-tl-sm bg-card text-card-foreground ring-1 ring-border",
+                        ? "border border-border bg-muted/60 font-mono text-xs text-muted-foreground"
+                        : "border-l-2 border-primary/70 bg-primary/[0.06] text-foreground/95",
                   )}
                 >
                   <p className="whitespace-pre-wrap">{m.content}</p>
@@ -88,13 +89,13 @@ export function ChatPanel({ messages, busy }: ChatPanelProps) {
                   <IntentChip label={m.intent} />
                 )}
                 {!isUser && m.ok === false && (
-                  <span className="inline-flex items-center gap-1 text-[10px] text-destructive">
+                  <span className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-destructive">
                     <XCircle className="size-3" />
                     failed
                   </span>
                 )}
                 {!isUser && m.ok === true && m.tool && (
-                  <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400">
+                  <span className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-emerald-500">
                     <CheckCircle2 className="size-3" />
                     {m.tool}
                   </span>
@@ -106,10 +107,10 @@ export function ChatPanel({ messages, busy }: ChatPanelProps) {
 
         {busy && (
           <div className="flex gap-3">
-            <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20">
+            <span className="hud-chip mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-sm">
               <Bot className="size-3.5" />
             </span>
-            <div className="rounded-2xl rounded-tl-sm bg-card px-3.5 py-2.5 ring-1 ring-border">
+            <div className="rounded-sm border-l-2 border-primary/70 bg-primary/[0.06] px-3.5 py-2.5">
               <div className="flex items-center gap-1.5">
                 {[0, 1, 2].map((i) => (
                   <span
@@ -118,6 +119,10 @@ export function ChatPanel({ messages, busy }: ChatPanelProps) {
                     style={{ animationDelay: `${i * 0.15}s` }}
                   />
                 ))}
+                <span className="ml-2 inline-flex items-center gap-0.5 font-mono text-[10px] uppercase tracking-wider text-primary/70">
+                  <ChevronRight className="size-3" />
+                  processing
+                </span>
               </div>
             </div>
           </div>
@@ -128,8 +133,8 @@ export function ChatPanel({ messages, busy }: ChatPanelProps) {
       {messages.length === 0 && !busy && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="flex flex-col items-center gap-2 text-muted-foreground">
-            <FileText className="size-5" />
-            <p className="text-xs">Transcript will appear here</p>
+            <FileText className="size-5 text-primary/50" />
+            <p className="font-mono text-xs">// transcript will appear here</p>
           </div>
         </div>
       )}

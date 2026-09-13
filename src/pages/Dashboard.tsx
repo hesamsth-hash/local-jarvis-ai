@@ -8,10 +8,13 @@ import {
   History,
   Puzzle,
   Send,
+  ShieldCheck,
   Square,
+  Terminal,
+  HardDrive,
   Volume2,
 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
@@ -24,10 +27,10 @@ import { JarvisOrb } from "@/components/jarvis/JarvisOrb";
 import { MediaViewer } from "@/components/jarvis/MediaViewer";
 import { ModelSettings } from "@/components/jarvis/ModelSettings";
 import { PluginBay } from "@/components/jarvis/PluginBay";
-import { SystemStrip } from "@/components/jarvis/SystemStrip";
 import { VoiceControls } from "@/components/jarvis/VoiceControls";
 import { useJarvis } from "@/components/jarvis/useJarvis";
 import { usePwaInstall } from "@/hooks/use-pwa-install";
+import { isDesktop } from "@/lib/jarvis/desktop-bridge";
 import { cn } from "@/lib/utils";
 
 export default function Dashboard() {
@@ -36,6 +39,12 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { canInstall, install, standalone } = usePwaInstall();
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const [booting, setBooting] = useState(!isDesktop());
+
+  useEffect(() => {
+    const t = setTimeout(() => setBooting(false), 1300);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -54,29 +63,57 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="bg-grid relative flex min-h-screen flex-col bg-background text-foreground">
+    <div className="bg-grid scanlines relative flex min-h-screen flex-col bg-background text-foreground">
       <div className="aurora" />
 
-      {/* Top bar */}
-      <header className="relative z-10 border-b border-border/70 bg-background/70 backdrop-blur">
+      {/* Boot sequence — pure overlay, native builds start instantly */}
+      <AnimatePresence>
+        {booting && (
+          <motion.div
+            key="boot"
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4 }}
+            className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-6 bg-background"
+          >
+            <div className="relative h-24 w-72 overflow-hidden">
+              <div className="boot-scan" />
+              <p className="glitch-flicker font-display text-3xl font-bold tracking-[0.18em] text-primary text-glow">
+                J.A.R.V.I.S
+              </p>
+            </div>
+            <div className="space-y-1 font-mono text-[11px] text-muted-foreground">
+              <p>&gt; NEURAL CORE .......... ONLINE</p>
+              <p>&gt; VOICE ENGINES ........ STANDBY</p>
+              <p>&gt; {isAndroidLabel()}</p>
+              <p className="text-primary">&gt; ALL SYSTEMS NOMINAL</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Top HUD bar */}
+      <header className="relative z-10 border-b border-primary/20 bg-background/70 backdrop-blur">
+        <div className="hud-line absolute inset-x-0 bottom-0" />
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
-            <span className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20">
-              <Cpu className="size-4.5" />
+            <span className="hud-chip flex size-9 items-center justify-center rounded-md">
+              <Cpu className="size-4" />
             </span>
             <div className="leading-tight">
-              <p className="font-display text-sm font-semibold">JARVIS</p>
-              <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              <p className="glitch-flicker font-display text-sm font-bold tracking-[0.22em] text-primary text-glow">
+                J.A.R.V.I.S
+              </p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
                 local console
               </p>
             </div>
             {/* brain status chip */}
             <span
               className={cn(
-                "ml-2 hidden items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[10px] uppercase ring-1 sm:flex",
+                "ml-2 hidden items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider ring-1 sm:flex",
                 jarvis.llmStatus === "online" && jarvis.llm.enabled
-                  ? "bg-emerald-500/10 text-emerald-600 ring-emerald-500/25 dark:text-emerald-400"
-                  : "bg-muted text-muted-foreground ring-border",
+                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-500 ring-emerald-500/30"
+                  : "border-border bg-muted text-muted-foreground",
               )}
             >
               <BrainCircuit className="size-3" />
@@ -90,22 +127,22 @@ export default function Dashboard() {
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 gap-1.5 rounded-full px-3 text-xs"
+                className="h-8 gap-1.5 rounded-md border-primary/30 px-3 font-mono text-xs uppercase tracking-wider text-primary hover:bg-primary/10"
                 onClick={() => void install()}
               >
                 <Download className="size-3.5" />
-                Install app
+                Install
               </Button>
             )}
             {user?.name || user?.email ? (
-              <span className="hidden truncate rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground sm:block">
+              <span className="hidden truncate rounded-md border-border bg-muted px-3 py-1 font-mono text-xs text-muted-foreground sm:block">
                 {user?.name ?? user?.email}
               </span>
             ) : null}
             <Button
               variant="outline"
               size="sm"
-              className="h-8 rounded-full px-3 text-xs"
+              className="h-8 rounded-md border-primary/30 px-3 font-mono text-xs uppercase tracking-wider text-primary hover:bg-primary/10"
               onClick={handleSignOut}
             >
               Sign out
@@ -118,19 +155,32 @@ export default function Dashboard() {
       <main className="relative z-10 mx-auto grid w-full max-w-7xl flex-1 gap-4 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_380px]">
         {/* Left column */}
         <section className="flex min-w-0 flex-col gap-4">
-          <div className="glass-panel soft-card flex flex-col items-center gap-4 rounded-2xl px-4 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-8">
+          <div className="hud-panel flex flex-col items-center gap-4 rounded-md px-4 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-8">
             <div className="flex flex-col gap-1 text-center sm:items-start sm:text-left">
-              <h1 className="font-display text-xl font-semibold sm:text-2xl">
+              <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-primary/80">
+                // system online
+              </p>
+              <h1 className="font-display text-xl font-semibold tracking-wide sm:text-2xl">
                 Good {greeting()}, {user?.name?.split(" ")[0] ?? "Sir"}
               </h1>
               <p className="max-w-md text-sm text-muted-foreground">
                 Voice, brain, and tools — all running on this device.
               </p>
-              <SystemStrip
-                className="mt-2 justify-center sm:justify-start"
-                commandCount={jarvis.commandCount ?? null}
-                workspaceName={jarvis.rootLabel}
-              />
+              <div className="mt-2 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
+                <HudChip icon={ShieldCheck} label="Privacy" value="100% local" />
+                <HudChip
+                  icon={HardDrive}
+                  label="Workspace"
+                  value={jarvis.rootLabel ?? "not connected"}
+                />
+                <HudChip
+                  icon={Terminal}
+                  label="Commands"
+                  value={
+                    jarvis.commandCount == null ? "—" : String(jarvis.commandCount)
+                  }
+                />
+              </div>
             </div>
             <JarvisOrb
               state={jarvis.voiceState}
@@ -143,10 +193,22 @@ export default function Dashboard() {
           </div>
 
           {/* Chat card */}
-          <div className="soft-card flex min-h-[380px] flex-1 flex-col overflow-hidden rounded-2xl">
+          <div className="hud-panel flex min-h-[380px] flex-1 flex-col overflow-hidden rounded-md">
+            <div className="flex items-center justify-between border-b border-primary/15 px-4 py-2">
+              <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
+                transcript
+              </p>
+              <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-primary/70">
+                <span className="relative flex size-1.5">
+                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-60" />
+                  <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
+                </span>
+                live feed
+              </span>
+            </div>
             <ChatPanel messages={jarvis.messages} busy={jarvis.busy} />
 
-            <div className="border-t border-border/70 p-3 sm:p-4">
+            <div className="border-t border-primary/15 p-3 sm:p-4">
               <div className="flex items-end gap-2">
                 <Textarea
                   ref={inputRef}
@@ -154,13 +216,13 @@ export default function Dashboard() {
                   onChange={(e) => jarvis.setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder='Type a command — "weather in Berlin", "search fusion energy", "remind me in 20 minutes to stretch"…'
-                  className="min-h-11 flex-1 resize-none rounded-xl text-sm"
+                  className="min-h-11 flex-1 resize-none rounded-md border-primary/25 font-mono text-sm placeholder:text-muted-foreground/60 focus-visible:ring-primary/40"
                   rows={1}
                   disabled={jarvis.busy}
                 />
                 {jarvis.voiceState === "listening" ? (
                   <Button
-                    className="h-11 w-11 shrink-0 rounded-xl p-0"
+                    className="h-11 w-11 shrink-0 rounded-md"
                     onClick={jarvis.toggleListening}
                     aria-label="Stop recording"
                   >
@@ -168,7 +230,7 @@ export default function Dashboard() {
                   </Button>
                 ) : (
                   <Button
-                    className="h-11 w-11 shrink-0 rounded-xl p-0"
+                    className="h-11 w-11 shrink-0 rounded-md border-primary/30 text-primary hover:bg-primary/10"
                     variant="outline"
                     onClick={jarvis.toggleListening}
                     aria-label="Start voice input"
@@ -177,7 +239,7 @@ export default function Dashboard() {
                   </Button>
                 )}
                 <Button
-                  className="h-11 w-11 shrink-0 rounded-xl p-0"
+                  className="h-11 w-11 shrink-0 rounded-md"
                   onClick={jarvis.submit}
                   disabled={jarvis.busy || !jarvis.input.trim()}
                   aria-label="Send"
@@ -196,7 +258,7 @@ export default function Dashboard() {
                   <button
                     key={s}
                     onClick={() => void jarvis.process(s, "text")}
-                    className="rounded-full bg-muted px-2.5 py-1 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+                    className="rounded-sm border border-primary/20 bg-primary/5 px-2.5 py-1 font-mono text-[10px] text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
                   >
                     {s}
                   </button>
@@ -208,21 +270,33 @@ export default function Dashboard() {
 
         {/* Right column */}
         <aside className="flex min-w-0 flex-col gap-4">
-          <Tabs defaultValue="voice" className="soft-card rounded-2xl">
-            <TabsList className="mx-3 mt-3 grid h-auto w-auto grid-cols-4">
-              <TabsTrigger value="voice" className="gap-1 px-2 text-xs">
+          <Tabs defaultValue="voice" className="hud-panel rounded-md">
+            <TabsList className="mx-3 mt-3 grid h-auto w-auto grid-cols-4 rounded-md border border-primary/15 bg-muted/40">
+              <TabsTrigger
+                value="voice"
+                className="gap-1 px-2 font-mono text-[11px] uppercase tracking-wider data-[state=active]:text-primary"
+              >
                 <Volume2 className="size-3.5" />
                 Voice
               </TabsTrigger>
-              <TabsTrigger value="brain" className="gap-1 px-2 text-xs">
+              <TabsTrigger
+                value="brain"
+                className="gap-1 px-2 font-mono text-[11px] uppercase tracking-wider data-[state=active]:text-primary"
+              >
                 <BrainCircuit className="size-3.5" />
                 Brain
               </TabsTrigger>
-              <TabsTrigger value="tools" className="gap-1 px-2 text-xs">
+              <TabsTrigger
+                value="tools"
+                className="gap-1 px-2 font-mono text-[11px] uppercase tracking-wider data-[state=active]:text-primary"
+              >
                 <Puzzle className="size-3.5" />
                 Tools
               </TabsTrigger>
-              <TabsTrigger value="files" className="gap-1 px-2 text-xs">
+              <TabsTrigger
+                value="files"
+                className="gap-1 px-2 font-mono text-[11px] uppercase tracking-wider data-[state=active]:text-primary"
+              >
                 <FolderOpen className="size-3.5" />
                 Files
               </TabsTrigger>
@@ -276,16 +350,18 @@ export default function Dashboard() {
           </Tabs>
 
           {/* History card */}
-          <div className="soft-card rounded-2xl">
-            <div className="flex items-center gap-2 border-b px-4 py-3">
+          <div className="hud-panel rounded-md">
+            <div className="flex items-center gap-2 border-b border-primary/15 px-4 py-3">
               <History className="size-4 text-primary" />
-              <p className="text-sm font-medium">Command history</p>
+              <p className="font-mono text-[11px] uppercase tracking-[0.25em]">
+                Command log
+              </p>
             </div>
             <ScrollArea className="h-56">
               <div className="space-y-1 p-2">
                 {(jarvis.history ?? []).length === 0 && (
-                  <p className="p-4 text-center text-xs text-muted-foreground">
-                    Commands you run are logged here (stored in your account).
+                  <p className="p-4 text-center font-mono text-xs text-muted-foreground">
+                    No commands executed yet.
                   </p>
                 )}
                 <AnimatePresence initial={false}>
@@ -294,16 +370,18 @@ export default function Dashboard() {
                       key={h._id}
                       initial={{ opacity: 0, y: 4 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="flex items-start gap-2.5 rounded-lg px-2.5 py-2 transition-colors hover:bg-muted/60"
+                      className="flex items-start gap-2.5 rounded-sm px-2.5 py-2 transition-colors hover:bg-primary/5"
                     >
                       <span
                         className={cn(
-                          "mt-1 size-1.5 shrink-0 rounded-full",
-                          h.ok ? "bg-emerald-500" : "bg-destructive",
+                          "mt-1.5 size-1.5 shrink-0 rounded-full",
+                          h.ok
+                            ? "bg-emerald-500 shadow-[0_0_6px_theme(colors.emerald.500)]"
+                            : "bg-destructive shadow-[0_0_6px_theme(colors.red.500)]",
                         )}
                       />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs">{h.input}</p>
+                        <p className="truncate font-mono text-xs">{h.input}</p>
                         <p className="truncate font-mono text-[10px] text-muted-foreground">
                           {h.intent ?? "—"} · {h.inputMode} ·{" "}
                           {new Date(h.createdAt).toLocaleTimeString()}
@@ -327,6 +405,34 @@ export default function Dashboard() {
       />
     </div>
   );
+}
+
+function HudChip({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="hud-chip flex items-center gap-2.5 rounded-sm px-3 py-2">
+      <Icon className="size-4 shrink-0" />
+      <div className="min-w-0 leading-tight">
+        <p className="text-[10px] uppercase tracking-[0.2em] opacity-70">
+          {label}
+        </p>
+        <p className="truncate font-mono text-xs font-medium">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+function isAndroidLabel() {
+  return typeof navigator !== "undefined" && /android/i.test(navigator.userAgent)
+    ? "ROOT BRIDGE · ARMED"
+    : "OS LINK · STANDBY";
 }
 
 function greeting() {

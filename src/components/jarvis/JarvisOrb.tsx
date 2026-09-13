@@ -37,27 +37,80 @@ export function JarvisOrb({
   return (
     <div className={cn("flex flex-col items-center gap-4", className)}>
       <div className="relative size-44 sm:size-52">
-        {/* outer rotating rings */}
-        <div
-          className={cn(
-            "orb-ring orb-ring-slow absolute inset-0 rounded-full",
-            listening && "border-primary/80",
-          )}
-        />
-        <div
-          className={cn(
-            "orb-ring-reverse absolute inset-3 rounded-full",
-            listening && "border-primary/70",
-          )}
-        />
+        {/* HUD tick ring */}
+        <svg
+          viewBox="0 0 200 200"
+          className="orb-ring-slow absolute inset-0 size-full"
+          aria-hidden
+        >
+          <circle
+            cx="100"
+            cy="100"
+            r="97"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1"
+            strokeDasharray="2 7"
+            className="text-primary/45"
+          />
+        </svg>
+        {/* HUD arc segments — three thick, fast arcs */}
+        <svg
+          viewBox="0 0 200 200"
+          className="orb-ring-reverse absolute inset-0 size-full"
+          aria-hidden
+        >
+          <circle
+            cx="100"
+            cy="100"
+            r="88"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="5"
+            strokeLinecap="round"
+            strokeDasharray="120 432"
+            className={cn(
+              "text-primary/70 transition-colors",
+              listening && "text-primary",
+            )}
+          />
+          <circle
+            cx="100"
+            cy="100"
+            r="88"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeDasharray="50 502"
+            transform="rotate(150 100 100)"
+            className={cn(
+              "text-primary/45 transition-colors",
+              listening && "text-primary/80",
+            )}
+          />
+          <circle
+            cx="100"
+            cy="100"
+            r="80"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeDasharray="24 479"
+            transform="rotate(230 100 100)"
+            className="text-primary/35"
+          />
+        </svg>
+
         {/* halo */}
         <motion.div
           className={cn(
             "absolute -inset-6 rounded-full",
-            listening && "bg-primary/20 blur-2xl",
+            listening ? "bg-primary/25 blur-2xl" : "bg-primary/10 blur-2xl",
           )}
           animate={{
-            opacity: listening ? [0.35, 0.7, 0.35] : 0.18,
+            opacity: listening ? [0.4, 0.75, 0.4] : 0.22,
             scale: listening ? [0.9, 1.08, 0.9] : 1,
           }}
           transition={{
@@ -91,6 +144,26 @@ export function JarvisOrb({
               ease: "easeInOut",
             }}
           >
+            {/* reactor coils */}
+            <svg
+              viewBox="0 0 100 100"
+              className="absolute inset-0 size-full opacity-40"
+              aria-hidden
+            >
+              {[30, 38, 46].map((r) => (
+                <circle
+                  key={r}
+                  cx="50"
+                  cy="50"
+                  r={r}
+                  fill="none"
+                  stroke="white"
+                  strokeWidth="0.8"
+                  strokeDasharray={r === 38 ? "3 9" : "1 7"}
+                />
+              ))}
+            </svg>
+
             {/* equalizer bars when speaking */}
             {speaking && (
               <div className="flex items-center gap-1.5">
@@ -129,7 +202,7 @@ export function JarvisOrb({
         <span
           className={cn(
             "font-mono text-[11px] uppercase tracking-[0.3em]",
-            listening ? "text-primary" : "text-muted-foreground",
+            listening ? "text-primary text-glow" : "text-muted-foreground",
           )}
         >
           {STATE_LABEL[state]}
