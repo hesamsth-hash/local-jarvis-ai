@@ -1,12 +1,16 @@
 import {
+  ChevronDown,
   FileText,
   FolderOpen,
+  FolderPlus,
   FolderTree,
   HardDrive,
   RefreshCw,
   ShieldAlert,
+  Smartphone,
   Unplug,
 } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { FsEntryView } from "@/lib/jarvis/types";
@@ -20,11 +24,14 @@ interface FileDeckProps {
   loading: boolean;
   savedPermission?: string;
   needsReconnect?: boolean;
+  workspaces?: string[];
+  androidBackend?: boolean;
   onConnect: () => void;
   onReconnect?: () => void;
   onDisconnect?: () => void;
   onRefresh: () => void;
   onOpen: (entry: FsEntryView) => void;
+  onSwitchWorkspace?: (name: string) => void;
 }
 
 function formatSize(size: number | null) {
@@ -42,23 +49,41 @@ export function FileDeck({
   entries,
   loading,
   needsReconnect,
+  workspaces,
+  androidBackend,
   onConnect,
   onReconnect,
   onDisconnect,
   onRefresh,
   onOpen,
+  onSwitchWorkspace,
 }: FileDeckProps) {
   const crumbs = path ? path.split(/[\\/]+/).filter(Boolean) : [];
+  const [wsOpen, setWsOpen] = useState(false);
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
         <div className="flex min-w-0 items-center gap-2">
-          <FolderTree className="size-4 shrink-0 text-primary" />
+          {androidBackend ? (
+            <Smartphone className="size-4 shrink-0 text-primary" />
+          ) : (
+            <FolderTree className="size-4 shrink-0 text-primary" />
+          )}
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium">
-              {connected ? (rootLabel ?? "Workspace") : "No workspace"}
-            </p>
+            {connected && workspaces && workspaces.length > 1 && onSwitchWorkspace ? (
+              <button
+                className="flex items-center gap-1 text-sm font-medium hover:text-primary"
+                onClick={() => setWsOpen((o) => !o)}
+              >
+                <span className="truncate">{rootLabel ?? "Workspace"}</span>
+                <ChevronDown className="size-3.5 text-muted-foreground" />
+              </button>
+            ) : (
+              <p className="truncate text-sm font-medium">
+                {connected ? (rootLabel ?? "Workspace") : "No workspace"}
+              </p>
+            )}
             {connected && (
               <p className="truncate font-mono text-[10px] text-muted-foreground">
                 /{crumbs.join("/") || ""}
@@ -93,6 +118,33 @@ export function FileDeck({
         )}
       </div>
 
+      {wsOpen && workspaces && workspaces.length > 1 && (
+        <div className="border-b px-4 py-2">
+          <p className="mb-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            Workspaces
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {workspaces.map((w) => (
+              <button
+                key={w}
+                onClick={() => {
+                  onSwitchWorkspace?.(w);
+                  setWsOpen(false);
+                }}
+                className={cn(
+                  "rounded-full px-2.5 py-1 text-[11px] ring-1 transition-colors",
+                  w === rootLabel
+                    ? "bg-primary/15 text-primary ring-primary/40"
+                    : "text-muted-foreground ring-border hover:bg-muted/60 hover:text-foreground",
+                )}
+              >
+                {w}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {connected && needsReconnect && (
         <div className="flex items-center gap-3 bg-amber-500/10 px-4 py-3 ring-1 ring-inset ring-amber-500/25">
           <ShieldAlert className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
@@ -114,15 +166,31 @@ export function FileDeck({
             <HardDrive className="size-6" />
           </div>
           <div className="space-y-1">
-            <p className="text-sm font-medium">Connect a local folder</p>
-            <p className="text-xs text-muted-foreground">
-              Grant access once — file tools then run entirely on this device.
+            <p className="text-sm font-medium">Connect your files</p>
+            <p className="max-w-xs text-xs text-muted-foreground">
+              {androidBackend
+                ? "Root backend active — browsing device storage. Add another folder below."
+                : "Grant access once — file tools then run entirely on this device. Add more folders any time."}
             </p>
           </div>
-          <Button size="sm" className="gap-2" onClick={onConnect}>
-            <FolderOpen className="size-4" />
-            Connect folder
-          </Button>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Button size="sm" className="gap-2" onClick={onConnect}>
+              <FolderOpen className="size-4" />
+              Connect folder
+            </Button>
+            {onConnect !== undefined && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-2"
+                onClick={onConnect}
+                title="Add another workspace folder"
+              >
+                <FolderPlus className="size-4" />
+                Add folder
+              </Button>
+            )}
+          </div>
         </div>
       ) : (
         <>

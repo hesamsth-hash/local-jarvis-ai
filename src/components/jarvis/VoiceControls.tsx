@@ -1,6 +1,7 @@
 import { Activity, Download, Mic, Palette, Volume2 } from "lucide-react";
 import { useState } from "react";
 import { ACCENTS, applyAccent, loadAccent } from "@/lib/jarvis/theme";
+import { VoiceModeControls } from "./VoiceModeControls";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -24,6 +25,12 @@ interface VoiceControlsProps {
   onSpeedChange: (v: number) => void;
   onAutoSpeakChange: (v: boolean) => void;
   onDownload: () => void;
+  // voice modes
+  wakeSupported: boolean;
+  wakeWord: boolean;
+  handsFree: boolean;
+  onWakeWord: (on: boolean) => void;
+  onHandsFree: (on: boolean) => void;
 }
 
 function EngineRow({
@@ -78,6 +85,11 @@ export function VoiceControls({
   onSpeedChange,
   onAutoSpeakChange,
   onDownload,
+  wakeSupported,
+  wakeWord,
+  handsFree,
+  onWakeWord,
+  onHandsFree,
 }: VoiceControlsProps) {
   const anyLoading = engines.tts === "loading" || engines.stt === "loading";
   const bothReady = engines.tts === "ready" && engines.stt === "ready";
@@ -183,6 +195,14 @@ export function VoiceControls({
           />
         </div>
       </div>
+
+      <VoiceModeControls
+        wakeSupported={wakeSupported}
+        wakeOn={wakeWord}
+        handsFreeOn={handsFree}
+        onWake={onWakeWord}
+        onHandsFree={onHandsFree}
+      />
 
       <div className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2.5">
         <div>

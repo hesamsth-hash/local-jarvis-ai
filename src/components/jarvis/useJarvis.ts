@@ -2,15 +2,22 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import {
+  addRoot,
+  backendActive,
   clearSavedRoot,
   hasRoot,
   listDir,
+  listRoots,
   pickRootFolder,
+  removeRoot,
   requestRootAccess,
   restoreRoot,
-  setRoot,
+  setBackend,
+  setActiveRoot,
   type RootPermission,
 } from "@/lib/jarvis/fs-tools";
+import { androidFs, androidFsSupported } from "@/lib/jarvis/android-fs";
+import { startWakeWord, wakeWordSupported, type WakeHandle } from "@/lib/jarvis/wake-word";
 import { runBrain, type BrainResult } from "@/lib/jarvis/brain";
 import { ttsEngine } from "@/lib/jarvis/kokoro-tts";
 import { sttEngine } from "@/lib/jarvis/whisper-stt";
@@ -34,7 +41,7 @@ import {
   syncPluginTools,
   type PluginSpec,
 } from "@/lib/jarvis/plugins";
-import { isDesktop } from "@/lib/jarvis/desktop-bridge";
+import { isAndroid, isDesktop } from "@/lib/jarvis/desktop-bridge";
 import {
   addReminder,
   dueReminders,
@@ -129,8 +136,11 @@ export function useJarvis() {
   const [fsPath, setFsPath] = useState("");
   const [fsEntries, setFsEntries] = useState<FsEntryView[]>([]);
   const [fsLoading, setFsLoading] = useState(false);
+  const [workspaces, setWorkspaces] = useState<string[]>([]);
 
   const recorderRef = useRef<RecorderHandle | null>(null);
+  const busyRef = useRef(false);
+  busyRef.current = busy;
   const speakHandleRef = useRef<{ stop: () => void } | null>(null);
   const focusTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const disabledRef = useRef(disabledTools);
@@ -319,22 +329,48 @@ export function useJarvis() {
   const connectFolder = useCallback(async () => {
     const handle = await pickRootFolder();
     if (!handle) return false;
-    setRoot(handle);
+    const name = await addRoot(handle);
     setConnected(true);
     setSavedPermission("granted");
-    setRootLabel(handle.name);
+    setRootLabel(name);
+    setWorkspaces(await listRoots());
     await refreshFs("");
     return true;
   }, [refreshFs]);
 
   const disconnectFolder = useCallback(async () => {
-    await clearSavedRoot();
+    const active = rootLabel;
+    if (active && workspaces.length > 1) {
+      // multiple workspaces: remove just the active one, fall back to another
+      await removeRoot(active);
+      const rest = await listRoots();
+      setWorkspaces(rest);
+      if (rest[0]) {
+        await setActiveRoot(rest[0]);
+        setRootLabel(rest[0]);
+        await refreshFs("");
+        return;
+      }
+    } else {
+      await clearSavedRoot();
+    }
     setConnected(false);
     setSavedPermission("none");
     setRootLabel(null);
+    setWorkspaces([]);
     setFsEntries([]);
     setFsPath("");
-  }, []);
+  }, [refreshFs, rootLabel, workspaces.length]);
+
+  const switchWorkspace = useCallback(
+    async (name: string) => {
+      const ok = await setActiveRoot(name);
+      if (!ok) return;
+      setRootLabel(name);
+      await refreshFs("");
+    },
+    [refreshFs],
+  );
 
   useEffect(() => {
     if (connected) void refreshFs("");
@@ -361,12 +397,22 @@ export function useJarvis() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
+      // Android + root: shell backend replaces the (missing) folder picker.
+      if (isAndroid() && androidFsSupported()) {
+        setBackend(androidFs);
+        setConnected(true);
+        setSavedPermission("granted");
+        setRootLabel("Device storage (root)");
+        await refreshFs("");
+        return;
+      }
       const perm = await restoreRoot();
       if (cancelled) return;
       setSavedPermission(perm);
+      setWorkspaces(await listRoots());
       if (perm === "granted") {
         setConnected(true);
-        // name comes from the handle
+        // name comes from the active handle
         const mod = await import("@/lib/jarvis/fs-tools");
         setRootLabel(mod.rootName());
       }
@@ -374,6 +420,7 @@ export function useJarvis() {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
 
@@ -777,6 +824,24 @@ export function useJarvis() {
             setLlm(cfg);
             setLlmStatus("online");
           },
+          // voice modes + workspaces, controllable by voice as well
+          onWakeWord: enableWakeWord,
+          onHandsFree: enableHandsFree,
+          switchWorkspace: async (name) => {
+            const target = workspacesRef.current.find(
+              (w) =>
+                w.toLowerCase() === name.toLowerCase() ||
+                w.toLowerCase().includes(name.toLowerCase()),
+            );
+            if (!target) {
+              const list = workspacesRef.current;
+              return list.length
+                ? `No workspace named "${name}". Connected: ${list.join(", ")}.`
+                : "Only one workspace is connected right now.";
+            }
+            await switchWorkspace(target);
+            return `Switched to the ${target} workspace.`;
+          },
         });
         pushMessage({
           id: uid(),
@@ -801,6 +866,10 @@ export function useJarvis() {
         if (result.navigate === "start-listening") void beginListening();
         if (autoSpeak && !disabledRef.current.includes("kokoro-tts")) {
           await speak(result.reply);
+          // hands-free: re-arm the wake ears after the spoken reply (give TTS room to finish)
+          if (handsFreeRef.current || wakeWordRef.current) {
+            setTimeout(() => armWakeListener(), 1200);
+          }
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Something went wrong.";
@@ -822,7 +891,7 @@ export function useJarvis() {
 
   // ---------- voice input ----------
   const beginListening = useCallback(async () => {
-    if (recorderRef.current || busy) return;
+    if (recorderRef.current || busyRef.current) return;
     try {
       if (!sttEngine.ready) {
         setEngines((e) => ({ ...e, stt: "loading" }));
@@ -844,7 +913,7 @@ export function useJarvis() {
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busy, pushMessage]);
+  }, [pushMessage]);
 
   const stopRecording = useCallback(() => {
     const rec = recorderRef.current;
@@ -871,6 +940,7 @@ export function useJarvis() {
       .finally(() => {
         setBusy(false);
         setVoiceState("offline");
+        // ears re-arm after the reply is handled (see process → speak)
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [process, pushMessage]);
@@ -882,6 +952,67 @@ export function useJarvis() {
       void beginListening();
     }
   }, [stopRecording, beginListening]);
+
+  // ---------- wake word + hands-free ----------
+  const [wakeWord, setWakeWord] = useState(false);
+  const [handsFree, setHandsFree] = useState(false);
+  const wakeHandleRef = useRef<WakeHandle | null>(null);
+  const handsFreeRef = useRef(false);
+  handsFreeRef.current = handsFree;
+  const rearmRef = useRef<() => void>(() => {});
+
+  const armWakeListener = useCallback(() => {
+    wakeHandleRef.current?.stop();
+    wakeHandleRef.current = null;
+    if (!wakeWordRef.current && !handsFreeRef.current) return;
+    if (recorderRef.current) return; // already capturing a command
+    wakeHandleRef.current = startWakeWord(() => {
+      // wake word detected — capture the command right after it
+      void beginListening();
+      // safety: if nothing gets recorded, revert to listening for the wake word
+      setTimeout(() => {
+        if (!recorderRef.current) armWakeListener();
+      }, 4000);
+    });
+  }, [beginListening]);
+
+  const wakeWordRef = useRef(false);
+  wakeWordRef.current = wakeWord;
+  const workspacesRef = useRef<string[]>([]);
+  workspacesRef.current = workspaces;
+
+  const enableWakeWord = useCallback(
+    (on: boolean) => {
+      wakeWordRef.current = on; // ref first: armWakeListener reads it synchronously
+      setWakeWord(on);
+      if (!on) {
+        wakeHandleRef.current?.stop();
+        wakeHandleRef.current = null;
+        return;
+      }
+      armWakeListener();
+    },
+    [armWakeListener],
+  );
+
+  const enableHandsFree = useCallback(
+    (on: boolean) => {
+      setHandsFree(on);
+      handsFreeRef.current = on;
+      if (on) {
+        // hands-free implies wake word
+        setWakeWord(true);
+        wakeWordRef.current = true;
+        armWakeListener();
+      } else if (!wakeWordRef.current) {
+        wakeHandleRef.current?.stop();
+        wakeHandleRef.current = null;
+      }
+    },
+    [armWakeListener],
+  );
+
+  rearmRef.current = () => armWakeListener();
 
   const toggleTool = useCallback((id: string) => {
     setDisabledTools((prev) =>
@@ -935,6 +1066,9 @@ export function useJarvis() {
     connected, rootLabel, fsPath, fsEntries, fsLoading,
     connectFolder, refreshFs, openEntry, resumeAccess, savedPermission, disconnectFolder,
     toggleListening, stopSpeaking, process,
+    wakeWordSupported, wakeWord, enableWakeWord,
+    handsFree, enableHandsFree,
+    workspaces, switchWorkspace,
     history, commandCount,
     // llm / brain
     llm, setLlm, llmStatus, models, handleTestLlm,

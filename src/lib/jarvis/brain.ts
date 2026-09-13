@@ -59,11 +59,18 @@ export interface BrainDeps {
   history?: { role: "user" | "assistant"; content: string }[];
   /** Called when a failover preset proved alive and was adopted. */
   onBrainAdopted?: (cfg: LlmConfig) => void;
+  /** Voice-mode hooks so "wake word on / hands-free on" work by voice too. */
+  onWakeWord?: (on: boolean) => void;
+  onHandsFree?: (on: boolean) => void;
+  /** Switch the active workspace; returns a spoken confirmation or null. */
+  switchWorkspace?: (name: string) => Promise<string | null>;
 }
 
 const HELP_TEXT = `Here's what I can do, all locally:
 
 Offline (no LLM needed):
+• "wake word on" — say "Jarvis" anywhere to get my attention · "hands-free on" — full conversation loop
+• "switch workspace <name>" — jump between connected folders
 • "connect folder" — pick a workspace folder on your machine
 • "list files" / "read <file>" / "write <file> with <text>" — file tools
 • "rename <a> to <b>" · "move <a> to <dir>" · "delete <path>" · "undo delete"
@@ -130,6 +137,26 @@ export async function runBrain(
       tool: "fs-tools",
       ok: true,
     };
+  }
+
+  // voice-mode intents (work with zero brain)
+  if (/wake word/i.test(text) && /\b(on|enable|start|arm)\b/i.test(text)) {
+    deps.onWakeWord?.(true);
+    return { reply: 'Wake word armed — just say "Jarvis" and I\'ll listen for your command.', intent: "voice.wake", ok: true };
+  }
+  if (/hands.?free/i.test(text) && /\b(on|enable|start|engage)\b/i.test(text)) {
+    deps.onHandsFree?.(true);
+    return { reply: "Hands-free engaged. I\'ll re-listen after every reply — just talk.", intent: "voice.handsfree", ok: true };
+  }
+  if (/(wake word|hands.?free)/i.test(text) && /\b(off|disable|stop)\b/i.test(text)) {
+    deps.onHandsFree?.(false);
+    deps.onWakeWord?.(false);
+    return { reply: "Voice modes off — back to push-to-talk.", intent: "voice.modes", ok: true };
+  }
+  // workspace switching (multiple folders / Android storage areas)
+  if (/(switch|change)\s+(to\s+)?(workspace|folder|storage)/i.test(text) && !/connect|pick|add/i.test(text)) {
+    const r = await deps.switchWorkspace?.(text.replace(/.*(?:workspace|folder|storage)\s*(?:to\s+)?/i, "").replace(/["']/g, "").trim());
+    if (r) return { reply: r, intent: "fs.workspace", ok: true };
   }
 
   if (/^(help|what can you do|commands|capabilities)/.test(text)) {

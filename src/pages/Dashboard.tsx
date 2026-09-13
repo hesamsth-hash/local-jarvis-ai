@@ -332,6 +332,11 @@ export default function Dashboard() {
                 onSpeedChange={jarvis.setSpeed}
                 onAutoSpeakChange={jarvis.setAutoSpeak}
                 onDownload={jarvis.loadEngines}
+                wakeSupported={jarvis.wakeWordSupported()}
+                wakeWord={jarvis.wakeWord}
+                handsFree={jarvis.handsFree}
+                onWakeWord={jarvis.enableWakeWord}
+                onHandsFree={jarvis.enableHandsFree}
               />
             </TabsContent>
             <TabsContent value="brain" className="px-0 pb-3">
@@ -362,11 +367,13 @@ export default function Dashboard() {
                 needsReconnect={
                   jarvis.connected && jarvis.savedPermission !== "granted"
                 }
+                workspaces={jarvis.workspaces}
                 onConnect={() => void jarvis.connectFolder()}
                 onReconnect={() => void jarvis.resumeAccess()}
                 onDisconnect={() => void jarvis.disconnectFolder()}
                 onRefresh={() => void jarvis.refreshFs(jarvis.fsPath)}
                 onOpen={jarvis.openEntry}
+                onSwitchWorkspace={(name) => void jarvis.switchWorkspace(name)}
               />
             </TabsContent>
           </Tabs>

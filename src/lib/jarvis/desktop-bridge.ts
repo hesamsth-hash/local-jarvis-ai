@@ -258,16 +258,27 @@ export async function desktopExecute(
   command: string,
   args: string[] = [],
 ): Promise<string | null> {
+  const r = await desktopExecuteRaw(command, args);
+  return r?.message ?? (r ? "Done (no output)." : null);
+}
+
+/** Raw execute_command result — keeps the ok flag (needed for the FS backend). */
+export async function desktopExecuteRaw(
+  command: string,
+  args: string[] = [],
+): Promise<{ ok: boolean; message: string } | null> {
   const t = tauri();
   if (!t) return null;
   try {
-    const res = (await t.invoke("execute_command", { command, args })) as {
+    return (await t.invoke("execute_command", { command, args })) as {
       ok: boolean;
       message: string;
     };
-    return res.message;
   } catch (e) {
-    return e instanceof Error ? `Execute failed: ${e.message}` : "Execute failed.";
+    return {
+      ok: false,
+      message: e instanceof Error ? e.message : "Execute failed.",
+    };
   }
 }
 
