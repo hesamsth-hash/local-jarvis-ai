@@ -7,7 +7,7 @@ import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { ConvexReactClient } from "convex/react";
 import { StrictMode, useEffect, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Route, Routes, useLocation } from "react-router";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router";
 import "./index.css";
 import "./types/global.d.ts";
 import { initPwa } from "@/lib/pwa";
@@ -18,6 +18,12 @@ const AuthPage = lazy(() => import("./pages/Auth.tsx"));
 const Dashboard = lazy(() => import("./pages/Dashboard.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
+// Native builds (Android APK / Windows exe) run fully local: no cloud auth,
+// no Convex dependency. The console itself never uses the cloud backend —
+// only the optional template account does.
+const IS_NATIVE =
+  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
 // Simple loading fallback for route transitions
 function RouteLoading() {
   return (
@@ -27,7 +33,12 @@ function RouteLoading() {
   );
 }
 
-const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
+const convex = new ConvexReactClient(
+  ((import.meta.env.VITE_CONVEX_URL as string | undefined) ??
+    // CI-built native apps have no .env — a placeholder keeps the client
+    // constructible (history sync just stays offline instead of crashing).
+    (IS_NATIVE ? "https://convex.placeholder.invalid" : undefined)) as string,
+);
 
 
 
@@ -69,14 +80,25 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/" element={<Landing />} />
               <Route
                 path="/auth"
-                element={<AuthPage redirectAfterAuth="/dashboard" />}
+                element={
+                  IS_NATIVE ? (
+                    // No cloud sign-in in the local apps — straight in.
+                    <Navigate to="/dashboard" replace />
+                  ) : (
+                    <AuthPage redirectAfterAuth="/dashboard" />
+                  )
+                }
               />
               <Route
                 path="/dashboard"
                 element={
-                  <RequireAuth>
+                  IS_NATIVE ? (
                     <Dashboard />
-                  </RequireAuth>
+                  ) : (
+                    <RequireAuth>
+                      <Dashboard />
+                    </RequireAuth>
+                  )
                 }
               />
               <Route path="*" element={<NotFound />} />
