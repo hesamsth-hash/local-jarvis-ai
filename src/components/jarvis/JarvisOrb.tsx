@@ -144,13 +144,14 @@ export function JarvisOrb({
               ease: "easeInOut",
             }}
           >
-            {/* reactor coils */}
+            {/* reactor coils + spokes — movie-style */}
             <svg
               viewBox="0 0 100 100"
-              className="absolute inset-0 size-full opacity-40"
+              className="absolute inset-0 size-full"
               aria-hidden
             >
-              {[30, 38, 46].map((r) => (
+              {/* concentric coils */}
+              {[34, 41, 47].map((r) => (
                 <circle
                   key={r}
                   cx="50"
@@ -158,10 +159,31 @@ export function JarvisOrb({
                   r={r}
                   fill="none"
                   stroke="white"
-                  strokeWidth="0.8"
-                  strokeDasharray={r === 38 ? "3 9" : "1 7"}
+                  strokeWidth={r === 41 ? "1.2" : "0.8"}
+                  strokeDasharray={r === 41 ? "3 9" : "1.5 7"}
+                  opacity={r === 47 ? 0.35 : 0.55}
                 />
               ))}
+              {/* radial spokes (the copper winding look) */}
+              {Array.from({ length: 10 }, (_, i) => {
+                const a = (i * 36 * Math.PI) / 180;
+                return (
+                  <line
+                    key={i}
+                    x1={50 + 30 * Math.cos(a)}
+                    y1={50 + 30 * Math.sin(a)}
+                    x2={50 + 46 * Math.cos(a)}
+                    y2={50 + 46 * Math.sin(a)}
+                    stroke="white"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                    opacity="0.4"
+                  />
+                );
+              })}
+              {/* hot core glow */}
+              <circle cx="50" cy="50" r="17" fill="white" opacity="0.25" />
+              <circle cx="42" cy="42" r="5" fill="white" opacity="0.7" />
             </svg>
 
             {/* equalizer bars when speaking */}

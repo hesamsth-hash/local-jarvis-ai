@@ -289,6 +289,81 @@ export function activityPromptBlock(maxEntries = 8): string {
   return `\n\nRECENT ACTIVITY FROM PREVIOUS SESSIONS (newest first) — when the user says "continue" or "resume", use this plus the file tools to pick up exactly where they left off:\n${lines}`;
 }
 
+// ================= persistent reminders =================
+// Reminders survive restarts: if JARVIS was closed when one came due, it
+// reports on next launch ("finished while you were away"). This is also how
+// "did the app finish?" style questions get answered.
+
+const REM_KEY = "jarvis.reminders.v1";
+
+export interface StoredReminder {
+  id: string;
+  text: string;
+  dueAt: number;
+  fired?: boolean;
+  firedAt?: number;
+}
+
+function loadReminders(): StoredReminder[] {
+  try {
+    const raw = localStorage.getItem(REM_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    return Array.isArray(parsed) ? (parsed as StoredReminder[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveReminders(list: StoredReminder[]): void {
+  try {
+    localStorage.setItem(REM_KEY, JSON.stringify(list.slice(-100)));
+  } catch {
+    // ignore
+  }
+}
+
+export function addReminder(text: string, dueAtMs: number): StoredReminder {
+  const r: StoredReminder = {
+    id: uid(),
+    text: text.slice(0, 200),
+    dueAt: dueAtMs,
+  };
+  const list = loadReminders();
+  list.push(r);
+  saveReminders(list);
+  return r;
+}
+
+/** Reminders that are due but not yet fired (oldest first). */
+export function dueReminders(): StoredReminder[] {
+  const now = Date.now();
+  return loadReminders()
+    .filter((r) => !r.fired && r.dueAt <= now)
+    .sort((a, b) => a.dueAt - b.dueAt);
+}
+
+/** Anything not yet fired, soonest first (for the briefing). */
+export function pendingReminders(): StoredReminder[] {
+  const now = Date.now();
+  return loadReminders()
+    .filter((r) => !r.fired && r.dueAt > now)
+    .sort((a, b) => a.dueAt - b.dueAt);
+}
+
+export function markReminderFired(id: string): void {
+  const list = loadReminders();
+  const r = list.find((x) => x.id === id);
+  if (r) {
+    r.fired = true;
+    r.firedAt = Date.now();
+    saveReminders(list);
+  }
+}
+
+export function inMs(mins: number): number {
+  return Date.now() + Math.max(1, Math.round(mins)) * 60_000;
+}
+
 /** Best-effort file name out of free text (for activity logging). */
 export function extractFileName(text: string): string | undefined {
   const m = text.match(/[\w\-. ]*[\w\-.]+\.[a-z0-9]{1,5}\b/i);

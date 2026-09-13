@@ -85,7 +85,9 @@ export default function Dashboard() {
               <p>&gt; NEURAL CORE .......... ONLINE</p>
               <p>&gt; VOICE ENGINES ........ STANDBY</p>
               <p>&gt; {isAndroidLabel()}</p>
-              <p className="text-primary">&gt; ALL SYSTEMS NOMINAL</p>
+              <p className="text-primary">
+                &gt; {BOOT_LINES[Math.floor(Math.random() * BOOT_LINES.length)]}
+              </p>
             </div>
           </motion.div>
         )}
@@ -439,6 +441,16 @@ function isAndroidLabel() {
     ? "ROOT BRIDGE · ARMED"
     : "OS LINK · STANDBY";
 }
+
+// Small system-flavored boot lines — never suit/armor references.
+const BOOT_LINES = [
+  "Diagnostics complete — no anomalies.",
+  "All subsystems responding normally.",
+  "Local core synchronized. Standing by.",
+  "Interfaces calibrated. Awaiting input.",
+  "Systems nominal. Good to have you back.",
+  "Cache verified. Voice and hearing online.",
+];
 
 function greeting() {
   const h = new Date().getHours();

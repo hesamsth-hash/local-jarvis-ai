@@ -36,7 +36,12 @@ import {
 } from "@/lib/jarvis/plugins";
 import { isDesktop } from "@/lib/jarvis/desktop-bridge";
 import {
+  addReminder,
+  dueReminders,
+  inMs,
   logActivity,
+  markReminderFired,
+  pendingReminders,
   resumeSummary,
   stampSeen,
 } from "@/lib/jarvis/memory";
@@ -135,6 +140,8 @@ export function useJarvis() {
   llmRef.current = llm;
   const llmStatusRef = useRef(llmStatus);
   llmStatusRef.current = llmStatus;
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
 
   const logCommand = useMutation(api.jarvis.logCommand);
   const history = useQuery(api.jarvis.recentCommands, { limit: 12 });
@@ -163,17 +170,38 @@ export function useJarvis() {
     }
   }, [voice, speed, autoSpeak]);
 
-  // ---------- session continuity: welcome-back ----------
+  // ---------- session continuity: welcome-back + briefing ----------
   const bootGapRef = useRef<number | null | undefined>(undefined);
   useEffect(() => {
     if (bootGapRef.current === undefined) {
       bootGapRef.current = stampSeen();
+      const parts: string[] = [];
       const welcome = resumeSummary(bootGapRef.current ?? undefined);
-      if (welcome) {
+      if (welcome) parts.push(welcome);
+      // anything that came due while the app was closed?
+      const due = dueReminders();
+      if (due.length) {
+        const lines = due
+          .slice(0, 5)
+          .map((r) => {
+            markReminderFired(r.id);
+            const mins = Math.max(1, Math.round((Date.now() - r.dueAt) / 60000));
+            return `• ${r.text} — finished ${mins} min ago`;
+          })
+          .join("\n");
+        parts.push(`Since you were away:\n${lines}`);
+      }
+      const pending = pendingReminders().slice(0, 3);
+      if (pending.length) {
+        parts.push(
+          `Still on the docket:\n${pending.map((r) => `• ${r.text} (in ${Math.max(1, Math.round((r.dueAt - Date.now()) / 60000))} min)`).join("\n")}`,
+        );
+      }
+      if (parts.length) {
         pushMessage({
           id: uid(),
           role: "system",
-          content: welcome,
+          content: parts.join("\n\n"),
           createdAt: Date.now(),
         });
       }
@@ -347,7 +375,14 @@ export function useJarvis() {
     };
   }, []);
 
+
   // ---------- notifications ----------
+  // fired on time (app was open) → mark so the boot briefing doesn't repeat it
+  const markReminderFiredOnTime = useCallback(() => {
+    // the newest due reminder at fire time is ours
+    const due = dueReminders();
+    if (due.length) markReminderFired(due[due.length - 1]!.id);
+  }, []);
   const notify = useCallback((title: string, body?: string) => {
     if ("Notification" in window) {
       if (Notification.permission === "granted") {
@@ -534,15 +569,22 @@ export function useJarvis() {
           // ----- Reminder / check-in -----
           case "remind":
           case "checkin": {
-            const m = a.match(/^(?:in\s+)?(\d+)\s*(?:minutes?|mins?|m)?\s*(.+)?$/i);
-            if (!m) return { ok: false, data: 'Try: "<minutes> <message>", e.g. "20 stretch your legs".' };
-            const mins = Math.max(1, parseInt(m[1]!, 10));
-            const msg = (m[2] ?? "Check-in").trim();
+            const m = a.match(/^(?:in\s+)?(\d+)\s*(?:minutes?|mins?|m|h(?:ours?)?)?\s*(.+)?$/i);
+            if (!m) return { ok: false, data: 'Try: "<minutes> <message>", e.g. "20 the download should be done".' };
+            const n = Math.max(1, parseInt(m[1]!, 10));
+            const unit = (m[2] ?? "").toLowerCase();
+            const mins = /^h/.test(unit) ? n * 60 : n;
+            const msg = (m[3] ?? "Check-in").trim();
             const kind = action === "remind" ? "Reminder" : "Check-in";
-            setTimeout(() => notify(`${kind}: ${msg}`, `Scheduled ${mins} min ago`), mins * 60000);
+            // persistent: survives restarts; boot briefing reports misses
+            addReminder(`${kind}: ${msg}`, inMs(mins));
+            setTimeout(() => {
+              notify(`${kind}: ${msg}`, `Scheduled ${mins} min ago`);
+              markReminderFiredOnTime();
+            }, mins * 60000);
             return {
               ok: true,
-              data: `${kind} set: "${msg}" in ${mins} minute${mins === 1 ? "" : "s"} (keeps working while this tab is open).`,
+              data: `${kind} set: "${msg}" in ${mins} minute${mins === 1 ? "" : "s"} — persists even if this app restarts; I'll report it next launch if it comes due while I'm closed.`,
             };
           }
           // ----- Flights -----
@@ -614,6 +656,18 @@ export function useJarvis() {
         const llmReady =
           llmRef.current.enabled &&
           (llmStatusRef.current === "online" || probed);
+        // conversation context: last few turns (user + jarvis only)
+        const history = messagesRef.current
+          .filter(
+            (m) =>
+              (m.role === "user" || m.role === "jarvis") &&
+              !m.content.startsWith("JARVIS online"),
+          )
+          .slice(-10)
+          .map((m) => ({
+            role: m.role as "user" | "assistant",
+            content: m.content,
+          }));
         const result: BrainResult = await runBrain(text, {
           speak,
           connected: connectedRef.current,
@@ -621,6 +675,12 @@ export function useJarvis() {
           toolCtx: ctx,
           llm: llmRef.current,
           llmReady,
+          history,
+          // a failover preset proved alive → adopt it silently
+          onBrainAdopted: (cfg) => {
+            setLlm(cfg);
+            setLlmStatus("online");
+          },
         });
         pushMessage({
           id: uid(),

@@ -20,6 +20,8 @@ import {
   type ToolResult,
 } from "./tools";
 import {
+  FAILOVER_PRESETS,
+  keylessConfig,
   llmChat,
   planToolCall,
   parseToolCall,
@@ -53,6 +55,10 @@ export interface BrainDeps {
   toolCtx: ToolContext;
   llm: LlmConfig;
   llmReady: boolean;
+  /** Recent conversation so follow-ups ("and in euros?") work. */
+  history?: { role: "user" | "assistant"; content: string }[];
+  /** Called when a failover preset proved alive and was adopted. */
+  onBrainAdopted?: (cfg: LlmConfig) => void;
 }
 
 const HELP_TEXT = `Here's what I can do, all locally:
@@ -387,19 +393,47 @@ async function runLlmTurn(
   raw: string,
   deps: BrainDeps,
 ): Promise<BrainResult | null> {
-  const { llm, toolCtx } = deps;
+  const { toolCtx } = deps;
   const specs = toolsForLlm();
+  const ctxLines = (deps.history ?? [])
+    .slice(-10)
+    .map((h) => ({ role: h.role, content: h.content.slice(0, 500) }));
 
-  // hop 1: which tool?
-  const plan = await planToolCall(llm, raw, specs);
+  // hop 1: which tool? — with keyless auto-failover: if the active preset is
+  // dead/busy, silently try the other keyless ones before giving up.
+  let active = deps.llm;
+  const tryPlan = (cfg: LlmConfig) => planToolCall(cfg, raw, specs);
+  let plan;
+  try {
+    plan = await tryPlan(active);
+  } catch (e) {
+    let lastErr = e;
+    let rescued = false;
+    for (const id of FAILOVER_PRESETS) {
+      if (id === active.presetId) continue;
+      const alt = keylessConfig(id, active);
+      if (!alt) continue;
+      try {
+        plan = await tryPlan(alt);
+        deps.onBrainAdopted?.(alt);
+        active = alt;
+        rescued = true;
+        break;
+      } catch (e2) {
+        lastErr = e2;
+      }
+    }
+    if (!rescued) throw lastErr;
+  }
   if (!plan) {
-    // plain chat — no tool needed
-    const answer = await llmChat(llm, [
+    // plain chat — no tool needed (with conversation context)
+    const answer = await llmChat(active, [
       {
         role: "system",
         content:
           "You are JARVIS, a local personal assistant on the user's machine. Be concise and helpful. You have no tools in this turn.",
       },
+      ...ctxLines,
       { role: "user", content: raw },
     ]);
     return { reply: answer, intent: "llm.chat", tool: "local-llm", ok: true };
@@ -412,12 +446,13 @@ async function runLlmTurn(
   for (let hop = 0; hop < 3; hop++) {
     last = await executeTool(plan.tool, String(plan.args["arg"] ?? plan.args["0"] ?? stringifyArgs(plan.args)), toolCtx);
     // feed the result back; the model may want another tool
-    const follow = await llmChat(llm, [
+    const follow = await llmChat(active, [
       {
         role: "system",
         content:
           'You are JARVIS. You asked for a tool call and received its result. If the task is complete, answer the user concisely in plain text. If you need one more tool, reply with exactly {"tool":"<id>","args":{...}}.',
       },
+      ...ctxLines,
       { role: "user", content: userText },
       { role: "assistant", content: `{"tool":"${plan.tool}","args":${JSON.stringify(plan.args)}}` },
       { role: "user", content: `[TOOL_RESULT ok=${last.ok}] ${last.data}` },

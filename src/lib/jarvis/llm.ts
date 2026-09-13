@@ -58,7 +58,7 @@ export const PRESETS: {
     label: "LLM7.io ✨ keyless",
     provider: "openai-compatible",
     url: "https://api.llm7.io/v1",
-    hint: "no key, no signup — anonymous tier 10 req/min · 60/hr (gpt-oss:20b, mistral-nemo, minimax…)",
+    hint: "no key, no signup — 10 req/min · 60/hr. Model ids rotate: hit Test, then pick from the list (defaults to their current turbo model)",
     cloud: true,
     keyless: true,
   },
@@ -80,15 +80,7 @@ export const PRESETS: {
     cloud: true,
     keyless: true,
   },
-  {
-    id: "keylessai",
-    label: "KeylessAI ✨ keyless",
-    provider: "openai-compatible",
-    url: "https://keylessai.thryx.workers.dev/v1",
-    hint: "free OpenAI-compatible endpoint, no key — if it's down, paste the current /v1 URL from their npm page (search \"keylessai npm\") into the address field",
-    cloud: true,
-    keyless: true,
-  },
+
   // ---- Local servers: 100% offline ----
   {
     id: "ollama",
@@ -163,6 +155,33 @@ export const PRESETS: {
 export interface ModelInfo {
   id: string;
   size?: string;
+}
+
+/**
+ * Keyless failover order — when the active brain errors at request time,
+ * try these (same provider kind, still zero-setup) before giving up.
+ */
+export const FAILOVER_PRESETS = ["pollinations", "llm7", "kilo", "ovh"] as const;
+
+/** A ready-to-use config for a keyless preset id (model left blank → list). */
+export function keylessConfig(presetId: string, current: LlmConfig): LlmConfig | null {
+  const p = PRESETS.find((x) => x.id === presetId);
+  if (!p?.keyless) return null;
+  return {
+    ...current,
+    provider: p.provider,
+    url: p.url,
+    presetId: p.id,
+    // LLM7's catalog rotates; openrouter/free works across Kilo's pool.
+    model:
+      p.id === "llm7"
+        ? "DeepSeek-V4-Flash-0731"
+        : p.id === "kilo"
+          ? "openrouter/free"
+          : p.id === "ovh"
+            ? "gpt-oss-120b"
+            : current.model,
+  };
 }
 
 async function fetchJson(url: string, init?: RequestInit, timeoutMs = 8000) {

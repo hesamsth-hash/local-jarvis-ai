@@ -9,6 +9,9 @@
     "core:window:allow-start-dragging",
     "core:window:allow-set-title",
     "opener:default",
-    "notification:default"
+    "notification:default",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled"
   ]
 }
