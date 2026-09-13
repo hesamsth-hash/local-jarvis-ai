@@ -23,45 +23,58 @@ every push.
 works offline. Grant microphone permission when asked (voice input), and
 notification permission (reminders).
 
+### Rooted phone? Unlock the full Mark-III mode
+
+On a rooted device (KernelSU / Magisk), open your root manager → grant
+**superuser** access to **JARVIS Local Console**. That single grant unlocks:
+
+- **See & Act** — JARVIS screenshots the real screen (`screencap`), finds
+  what you describe with the vision model, and taps/drags/draws on it
+- **Computer Control** — `"tap the search bar"`, `"type hello"`,
+  `"press back"`, `"scroll down"` — real input injection, any app
+- **Open App / Execute** — `"open whatsapp"`, or any shell command with
+  output (`su -c`)
+
+No root? Everything else still works; the power tools just explain
+themselves instead of failing.
+
 ---
 
 ## What works on Android — and what can't
 
-| Capability | Android APK | Why |
-|---|---|---|
-| Kokoro TTS + Whisper STT (voice) | ✅ | runs in the app's webview |
-| Keyless brains (Pollinations…), Ollama/key presets | ✅ | same Brain tab |
-| Memory + "welcome back / continue" | ✅ | same, stored on-device |
-| Web search, weather, YouTube, browser open | ✅ | links open in your browser |
-| Plugins & JARVIS-built tools (`make_tool`) | ✅ | sandboxed workers |
-| Notifications / reminders | ✅ | Android system notifications |
-| System Monitor | ✅ | real CPU/RAM/uptime stats (sysinfo) |
-| File tools (read/write/rename/delete) | ✅* | pick a folder via the file picker |
-| Computer Control (mouse/keyboard) | ❌ | Android never lets one app click another |
-| See & Act / desktop screenshot | ❌ | same reason — screen capture of other apps is blocked |
-| Open App / Execute programs | ❌ (yet) | needs an Android "intent" layer — ask and it'll be added |
+| Capability | Android APK (no root) | Android APK (**rooted** — KernelSU/Magisk) | Why |
+|---|---|---|---|
+| Kokoro TTS + Whisper STT (voice) | ✅ | ✅ | runs in the app's webview |
+| Keyless brains (Pollinations…), Ollama/key presets | ✅ | ✅ | same Brain tab |
+| Memory + "welcome back / continue" | ✅ | ✅ | same, stored on-device |
+| Web search, weather, YouTube, browser open | ✅ | ✅ | links open in your browser |
+| Plugins & JARVIS-built tools (`make_tool`) | ✅ | ✅ | sandboxed workers |
+| Notifications / reminders | ✅ | ✅ | Android system notifications |
+| System Monitor | ✅ | ✅ | real CPU/RAM/uptime stats (sysinfo) |
+| File tools (read/write/rename/delete) | ✅* | ✅* | pick a folder via the file picker |
+| Open App | ❌ | ✅ **real** — launches any installed app (`monkey`/`am`) | package manager access |
+| Execute / shell | ❌ | ✅ **real** — root shell with output (`su -c`) | needs uid 0 |
+| See & Act (screenshot + act) | ❌ | ✅ **real** — `screencap` → vision → `input tap/swipe/text` | screen capture of other apps is root-only |
+| Computer Control (tap/drag/type/keys) | ❌ | ✅ **real** — `input` injection | same |
 
-The ❌ tools reply honestly instead of failing: JARVIS explains Android's
-restriction and offers what it *can* do. The Windows build keeps every power.
+Without root, the gated tools reply honestly: JARVIS explains that root is
+needed and how to grant it. The Windows build keeps every power regardless.
 
 ---
 
-## Signing (only matters if you reinstall updates)
+## Signing
 
-Each build signs the APK with the repo secret **`ANDROID_KEYSTORE_BASE64`**
-if you set one (base64 of your `.keystore`). Without it, a temporary key is
-used — fine for testing, but Android will refuse to **update** an installed
-app with an APK signed by a different key (uninstall first, or set up a
-stable keystore):
+CI builds are **debug-signed**: Android auto-generates a key and signs the
+APK with it — perfect for side-loading (which is exactly this use case).
+The APK installs on any device with "unknown apps" allowed.
 
-```bash
-keytool -genkeypair -v -keystore jarvis.keystore -alias jarvis \
-  -keyalg RSA -keysize 2048 -validity 36500 -storepass YOURPASS
-base64 -w0 jarvis.keystore   # paste as ANDROID_KEYSTORE_BASE64 secret
-```
-
-Optional repo secrets: `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
-`ANDROID_KEY_PRIVATE_PASSWORD`.
+Two things to know:
+- Installing an update built with a *different* debug key? Uninstall the old
+  app first (Android refuses cross-key updates).
+- Play Store distribution would need a proper release keystore — generate one
+  with `keytool` and follow [Tauri's Android signing guide](
+  https://v2.tauri.app/distribute/sign/android/). For personal use, the
+  debug-signed APK is all you need.
 
 ---
 

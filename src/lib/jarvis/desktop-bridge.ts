@@ -36,6 +36,22 @@ export function isDesktop(): boolean {
   return tauri() !== null;
 }
 
+/**
+ * True when the native backend has root (Android with KernelSU/Magisk root
+ * granted to JARVIS). Desktop builds report false. Root unlocks the full
+ * See & Act / input / shell powers on Android.
+ */
+export async function hasRootAccess(): Promise<boolean> {
+  const t = tauri();
+  if (!t) return false;
+  try {
+    const r = (await t.invoke("root_status")) as { root: boolean };
+    return r.root === true;
+  } catch {
+    return false;
+  }
+}
+
 export interface DesktopSystemInfo {
   os_name: string;
   os_version: string;

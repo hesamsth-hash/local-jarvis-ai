@@ -3,10 +3,9 @@ name: Build Android APK
 # Builds the native Android app (.apk) for every push to main and version
 # tags. You never need Android Studio or the NDK locally — push and download.
 #
-# Signing follows the official Tauri flow (keystore.properties + gradle):
-# - If the repo secret ANDROID_KEYSTORE_BASE64 is set, that keystore signs
-#   the release (stable identity across updates).
-# - Otherwise a temporary key is generated so the build still succeeds.
+# The APK is debug-signed (auto-generated key, handled by the Android build).
+# That's ideal for side-loading: it installs on any device. Play Store
+# distribution would need a proper release keystore — see ANDROID.md.
 
 on:
   push:
@@ -20,9 +19,6 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: write
-    env:
-      KS_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'jarvis123' }}
-      KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || 'jarvis' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -31,7 +27,7 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build frontend (isolated so its errors are obvious)
+      - name: Build frontend
         run: bun run build
 
       - name: Install Rust toolchain
@@ -44,86 +40,24 @@ jobs:
         with:
           workspaces: src-tauri
 
-      # GitHub's ubuntu runners ship the Android SDK + NDK; locate the newest
-      # preinstalled NDK (install one via sdkmanager if ever absent).
-      - name: Locate Android NDK
+      # GitHub's ubuntu runners ship the Android SDK + NDK; find the newest
+      # preinstalled NDK and export it for the Tauri CLI.
+      - name: Export Android NDK path
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-          NDK_DIR=$(ls -d "${ANDROID_HOME}"/ndk/* 2>/dev/null | sort | tail -n1)
-          if [ -z "$NDK_DIR" ]; then
-            echo "No preinstalled NDK found — installing one via sdkmanager"
-            yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018" >/dev/null
-            NDK_DIR="${ANDROID_HOME}/ndk/27.2.12479018"
-          fi
-          echo "NDK_HOME=$NDK_DIR" >> $GITHUB_ENV
-          echo "Using NDK at $NDK_DIR"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          NDK_DIR=$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | sort | tail -n1)
+          echo "NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
+          echo "Using NDK: $NDK_DIR"
 
-      # One-time gradle scaffold for the Android project (generated fresh in
-      # CI every run; not committed to the repo).
       - name: Initialize Android project
         run: CI=1 bun tauri android init
 
-      # Official signing flow: decode/generate the keystore, write
-      # keystore.properties, and patch app/build.gradle.kts to use it for
-      # release builds.
-      - name: Configure release signing
-        working-directory: src-tauri/gen/android
-        env:
-          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        run: |
-          KS="$RUNNER_TEMP/jarvis.keystore"
-          if [ -n "$KS_B64" ]; then
-            echo "$KS_B64" | base64 -d > "$KS"
-            echo "Using release keystore from repo secrets."
-          else
-            keytool -genkeypair -v -keystore "$KS" -alias "$KS_ALIAS" -keyalg RSA \
-              -keysize 2048 -validity 36500 -storepass "$KS_PASSWORD" -keypass "$KS_PASSWORD" \
-              -dname "CN=JARVIS Local Console, OU=Dev, O=JARVIS, L=Local, ST=Local, C=US"
-            echo "No ANDROID_KEYSTORE_BASE64 secret — signed with a temporary key (uninstall before installing an update signed differently)."
-          fi
-
-          {
-            echo "keyAlias=$KS_ALIAS"
-            echo "password=$KS_PASSWORD"
-            echo "storeFile=$KS"
-          } > keystore.properties
-
-          python3 - <<'PY'
-          import pathlib
-          p = pathlib.Path("app/build.gradle.kts")
-          s = p.read_text()
-          if "import java.io.FileInputStream" not in s:
-              s = "import java.io.FileInputStream\n" + s
-          if 'create("release")' not in s:
-              block = '''signingConfigs {
-    create("release") {
-        val keystorePropertiesFile = rootProject.file("keystore.properties")
-        val keystoreProperties = java.util.Properties()
-        if (keystorePropertiesFile.exists()) {
-            keystoreProperties.load(FileInputStream(keystorePropertiesFile))
-        }
-        keyAlias = keystoreProperties["keyAlias"] as String
-        keyPassword = keystoreProperties["password"] as String
-        storeFile = file(keystoreProperties["storeFile"] as String)
-        storePassword = keystoreProperties["password"] as String
-    }
-}
-'''
-              s = s.replace("buildTypes {", block + "buildTypes {", 1)
-          s = s.replace(
-              'signingConfig = signingConfigs.getByName("debug")',
-              'signingConfig = signingConfigs.getByName("release")',
-          )
-          p.write_text(s)
-          print("release signing config applied")
-          PY
-
-      - name: Build signed APK (aarch64)
-        run: bun tauri android build --apk --target aarch64
+      - name: Build APK (aarch64)
+        run: bun tauri android build --apk --debug --target aarch64
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: JARVIS-Android-APK
-          path: src-tauri/gen/android/app/build/outputs/apk/*/release/*.apk
+          path: src-tauri/gen/android/app/build/outputs/apk/*/debug/*.apk
           if-no-files-found: error

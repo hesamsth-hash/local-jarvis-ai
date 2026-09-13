@@ -1,5 +1,4 @@
 use serde::Serialize;
-#[cfg(not(target_os = "android"))]
 use std::sync::Mutex;
 use sysinfo::{Components, System};
 
@@ -13,9 +12,11 @@ use enigo::{Keyboard, Mouse};
 // Desktop (Windows/macOS/Linux): full OS powers — input control (enigo),
 // screen capture, app launching, real system stats.
 //
-// Android: the same UI and brain, but input/capture/app-launch are stubbed
-// with honest replies — Android's security model doesn't allow one app to
-// click, type, or screenshot others. System info + notifications work.
+// Android: the same UI and brain. On a ROOTED phone (KernelSU/Magisk — e.g.
+// KernelSU v3.0.0 legacy) JARVIS gets the full Mark-III treatment: screen
+// capture (screencap), input injection (input tap/swipe/text/keyevent), app
+// launching (monkey/am) and root shell execution. Without root those reply
+// honestly that they need root; everything else works regardless.
 
 // ---------------- System info (all platforms) ----------------
 
@@ -317,14 +318,26 @@ fn type_text(state: tauri::State<'_, InputState>, text: String) -> Result<String
     })
 }
 
-// ---------------- Desktop: screen capture ----------------
+// ---------------- Screen capture / metrics ----------------
+// The structs are shared by both platforms; the implementations differ.
 
-#[cfg(not(target_os = "android"))]
 #[derive(Serialize)]
 pub struct Screenshot {
     data_uri: String,
     width: u32,
     height: u32,
+}
+
+#[derive(Serialize)]
+pub struct ScreenMetrics {
+    width: i32,
+    height: i32,
+}
+
+#[derive(Serialize)]
+pub struct OkMsg {
+    ok: bool,
+    message: String,
 }
 
 #[cfg(not(target_os = "android"))]
@@ -351,13 +364,6 @@ fn desktop_picture() -> Result<Screenshot, String> {
 }
 
 #[cfg(not(target_os = "android"))]
-#[derive(Serialize)]
-pub struct ScreenMetrics {
-    width: i32,
-    height: i32,
-}
-
-#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn screen_metrics(state: tauri::State<'_, InputState>) -> Result<ScreenMetrics, String> {
     with_input(&state, |enigo| {
@@ -368,14 +374,7 @@ fn screen_metrics(state: tauri::State<'_, InputState>) -> Result<ScreenMetrics, 
     })
 }
 
-// ---------------- Desktop: apps / URLs ----------------
-
-#[cfg(not(target_os = "android"))]
-#[derive(Serialize)]
-pub struct OkMsg {
-    ok: bool,
-    message: String,
-}
+// ---------------- Desktop: apps / URLs / execution ----------------
 
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
@@ -464,122 +463,392 @@ fn execute_command(command: String, args: Option<Vec<String>>) -> OkMsg {
     }
 }
 
-// ---------------- Android: honest stubs ----------------
-// Android's security model doesn't let one app click/type/screenshot other
-// apps — these return clear replies so JARVIS explains instead of failing.
+// ---------------- Android: root powers ----------------
+// On a rooted phone (KernelSU/Magisk) JARVIS drives the whole device:
+// screencap for vision, `input` for taps/swipes/text/keys, monkey/am for
+// launching apps, and a root shell for everything else. Without root these
+// commands explain what's missing instead of failing cryptically.
+
+#[cfg(target_os = "android")]
+/// Last pointer position — touchscreens have no persistent cursor, so
+/// mouse_move stores the target and mouse_click taps there (See & Act flow).
+static LAST_POS: Mutex<(i32, i32)> = Mutex::new((0, 0));
 
 #[cfg(target_os = "android")]
 fn android_unavailable(what: &str) -> String {
     format!(
-        "{what} isn't possible on Android: the OS doesn't allow one app to control or capture another app's screen. On the Windows version of JARVIS this works fully. Here I can chat, run web tools, and use voice instead."
+        "{what} needs root on Android. Grant JARVIS root access in your root manager (KernelSU/Magisk) and try again — or use the Windows version of JARVIS, where this works fully."
     )
 }
 
+/// True when `su` works and really gives uid 0 (root granted to JARVIS).
 #[cfg(target_os = "android")]
-#[tauri::command]
-fn mouse_move(x: i32, y: i32, relative: bool) -> Result<String, String> {
-    Ok(android_unavailable(&format!(
-        "Moving the mouse to ({x}, {y}){}",
-        if relative { " relatively" } else { "" }
-    )))
+fn has_root() -> bool {
+    std::process::Command::new("su")
+        .arg("-c")
+        .arg("id")
+        .output()
+        .map(|o| {
+            o.status.success()
+                && String::from_utf8_lossy(&o.stdout).contains("uid=0")
+        })
+        .unwrap_or(false)
 }
 
+/// Run a shell command as root, returning trimmed stdout.
 #[cfg(target_os = "android")]
-#[tauri::command]
-fn mouse_click(button: String, kind: String) -> Result<String, String> {
-    Ok(android_unavailable(&format!("A {kind} {button}-click")))
-}
-
-#[cfg(target_os = "android")]
-#[tauri::command]
-fn mouse_scroll(amount: i32) -> Result<String, String> {
-    Ok(android_unavailable(&format!("Scrolling by {amount}")))
-}
-
-#[cfg(target_os = "android")]
-#[tauri::command]
-fn mouse_double_click() -> Result<String, String> {
-    Ok(android_unavailable("A double-click"))
-}
-
-#[cfg(target_os = "android")]
-#[tauri::command]
-fn mouse_drag(from_x: i32, from_y: i32, to_x: i32, to_y: i32, steps: Option<i32>) -> Result<String, String> {
-    Ok(android_unavailable(&format!(
-        "Dragging from ({from_x},{from_y}) to ({to_x},{to_y}) in {} steps",
-        steps.unwrap_or(25)
-    )))
-}
-
-#[cfg(target_os = "android")]
-#[tauri::command]
-fn mouse_draw(points: Vec<(i32, i32)>) -> Result<String, String> {
-    Ok(android_unavailable(&format!(
-        "Drawing a path through {} points",
-        points.len()
-    )))
-}
-
-#[cfg(target_os = "android")]
-#[tauri::command]
-fn key_press(key: String) -> Result<String, String> {
-    Ok(android_unavailable(&format!("Pressing the {key} key")))
-}
-
-#[cfg(target_os = "android")]
-#[tauri::command]
-fn type_text(text: String) -> Result<String, String> {
-    Ok(android_unavailable(&format!(
-        "Typing \"{}\"",
-        if text.chars().count() > 40 {
-            format!("{}…", text.chars().take(40).collect::<String>())
-        } else {
-            text
-        }
-    )))
-}
-
-#[cfg(target_os = "android")]
-#[tauri::command]
-fn desktop_picture() -> Result<serde_json::Value, String> {
-    Err(android_unavailable("Capturing the screen"))
-}
-
-#[cfg(target_os = "android")]
-#[tauri::command]
-fn screen_metrics() -> Result<serde_json::Value, String> {
-    Err(android_unavailable("Querying display metrics"))
-}
-
-#[cfg(target_os = "android")]
-#[tauri::command]
-fn launch_app(name: String) -> Result<serde_json::Value, String> {
-    Ok(serde_json::json!({
-        "ok": false,
-        "message": format!("Launching apps isn't available in the Android build yet (tried to open \"{name}\").")
-    }))
-}
-
-#[cfg(target_os = "android")]
-#[tauri::command]
-fn open_url(app: tauri::AppHandle, url: String) -> Result<serde_json::Value, String> {
-    // Real: hands the URL to Android, which opens it in the browser.
-    use tauri_plugin_opener::OpenerExt;
-    match app.opener().open_url(url.clone(), None::<&str>) {
-        Ok(_) => Ok(serde_json::json!({
-            "ok": true,
-            "message": format!("Opened {url} in your browser.")
-        })),
-        Err(e) => Ok(serde_json::json!({
-            "ok": false,
-            "message": format!("Couldn't open {url}: {e}")
-        })),
+fn su_run(script: &str) -> Result<String, String> {
+    let out = std::process::Command::new("su")
+        .arg("-c")
+        .arg(script)
+        .output()
+        .map_err(|e| format!("couldn't start su (root not granted?): {e}"))?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    } else {
+        Err(format!(
+            "root command failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ))
     }
 }
 
 #[cfg(target_os = "android")]
 #[tauri::command]
-fn execute_command(command: String, args: Option<Vec<String>>) -> Result<serde_json::Value, String> {
+fn root_status() -> Result<serde_json::Value, String> {
+    Ok(serde_json::json!({ "root": has_root() }))
+}
+
+// Desktop build reports "no root" so the frontend bridge can call this
+// unconditionally on any native platform.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn root_status() -> Result<serde_json::Value, String> {
+    Ok(serde_json::json!({ "root": false }))
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn mouse_move(x: i32, y: i32, relative: bool) -> Result<String, String> {
+    let mut pos = LAST_POS.lock().map_err(|_| "position lock poisoned")?;
+    if relative {
+        pos.0 = (pos.0 + x).clamp(0, 20000);
+        pos.1 = (pos.1 + y).clamp(0, 20000);
+    } else {
+        *pos = (x, y);
+    }
+    Ok(format!("Pointer set to ({}, {}).", pos.0, pos.1))
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn mouse_click(button: String, kind: String) -> Result<String, String> {
+    if !has_root() {
+        return Err(android_unavailable("Clicking things on screen"));
+    }
+    let (x, y) = *LAST_POS.lock().map_err(|_| "position lock poisoned")?;
+    // Right-click ≈ long-press on touch; middle/left are plain taps.
+    if button == "right" {
+        su_run(&format!("input swipe {x} {y} {x} {y} 600"))?;
+        Ok(format!("Long-pressed ({x}, {y})."))
+    } else {
+        su_run(&format!("input tap {x} {y}"))?;
+        let _ = kind;
+        Ok(format!("Tapped ({x}, {y})."))
+    }
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn mouse_double_click() -> Result<String, String> {
+    if !has_root() {
+        return Err(android_unavailable("Double-tapping the screen"));
+    }
+    let (x, y) = *LAST_POS.lock().map_err(|_| "position lock poisoned")?;
+    su_run(&format!("input tap {x} {y}"))?;
+    std::thread::sleep(std::time::Duration::from_millis(70));
+    su_run(&format!("input tap {x} {y}"))?;
+    Ok(format!("Double-tapped ({x}, {y})."))
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn mouse_scroll(amount: i32) -> Result<String, String> {
+    if !has_root() {
+        return Err(android_unavailable("Scrolling the screen"));
+    }
+    let (x, y) = *LAST_POS.lock().map_err(|_| "position lock poisoned")?;
+    let dist = (amount.abs() * 3).clamp(120, 1200);
+    let (fy, ty) = if amount > 0 { (y, y - dist) } else { (y, y + dist) };
+    su_run(&format!("input swipe {x} {fy} {x} {ty} 250"))?;
+    Ok(format!("Scrolled {amount} at ({x}, {y})."))
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn mouse_drag(
+    from_x: i32,
+    from_y: i32,
+    to_x: i32,
+    to_y: i32,
+    steps: Option<i32>,
+) -> Result<String, String> {
+    if !has_root() {
+        return Err(android_unavailable("Dragging on the screen"));
+    }
+    let dur = (steps.unwrap_or(25).clamp(2, 200) * 12).max(200);
+    su_run(&format!("input swipe {from_x} {from_y} {to_x} {to_y} {dur}"))?;
+    Ok(format!("Dragged ({from_x},{from_y}) → ({to_x},{to_y})."))
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn mouse_draw(points: Vec<(i32, i32)>) -> Result<String, String> {
+    if !has_root() {
+        return Err(android_unavailable("Drawing on the screen"));
+    }
+    if points.len() < 2 {
+        return Err("need at least 2 points".into());
+    }
+    // Android 11+ supports motion-event injection — a true freehand stroke in
+    // one root shell. Falls back to a simple swipe on older devices.
+    let mut script = String::from("input motionevent");
+    script.push_str(&format!(" DOWN {} {}", points[0].0, points[0].1));
+    for (x, y) in points.iter().skip(1).take(120) {
+        script.push_str(&format!(" ; input motionevent MOVE {x} {y}"));
+    }
+    let last = points.last().unwrap();
+    script.push_str(&format!(" ; input motionevent UP {} {}", last.0, last.1));
+    match su_run(&script) {
+        Ok(_) => Ok(format!("Drew a path through {} points.", points.len())),
+        Err(_) => {
+            let (fx, fy) = points[0];
+            su_run(&format!(
+                "input swipe {fx} {fy} {} {} 400",
+                last.0, last.1
+            ))?;
+            Ok(format!("Drew a stroke ({} points, simplified).", points.len()))
+        }
+    }
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn key_press(key: String) -> Result<String, String> {
+    if !has_root() {
+        return Err(android_unavailable("Pressing keys"));
+    }
+    // Android KEYCODE_* values for the named keys JARVIS knows.
+    const SPECIAL: &[(&str, i32)] = &[
+        ("enter", 66),
+        ("back", 4),
+        ("home", 3),
+        ("tab", 61),
+        ("escape", 111),
+        ("space", 62),
+        ("backspace", 67),
+        ("delete", 112),
+        ("up", 19),
+        ("down", 20),
+        ("left", 21),
+        ("right", 22),
+        ("pageup", 92),
+        ("pagedown", 93),
+        ("f4", 131),
+        ("f5", 132),
+        ("f11", 139),
+        ("volumeup", 24),
+        ("volumedown", 25),
+        ("volumemute", 164),
+        ("medianext", 87),
+        ("mediaprev", 88),
+        ("mediaplaypause", 85),
+        ("power", 26),
+        ("printscreen", 120),
+        ("insert", 124),
+        ("capslock", 115),
+        ("numlock", 143),
+        ("shift", 59),
+        ("control", 129),
+        ("alt", 57),
+        ("meta", 117),
+    ];
+    let lower = key.to_lowercase();
+    for (name, code) in SPECIAL {
+        if lower == *name {
+            su_run(&format!("input keyevent {code}"))?;
+            return Ok(format!("Pressed {name}."));
+        }
+    }
+    // Single character or word → type it (input text uses %s for spaces).
+    let escaped = key.replace(' ', "%s");
+    su_run(&format!("input text \"{escaped}\""))?;
+    Ok(format!("Pressed/typed \"{key}\"."))
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn type_text(text: String) -> Result<String, String> {
+    if !has_root() {
+        return Err(android_unavailable("Typing text"));
+    }
+    let escaped = text.replace(' ', "%s");
+    su_run(&format!("input text \"{escaped}\""))?;
+    Ok(format!("Typed {} characters.", text.chars().count()))
+}
+
+/// Root screencap → PNG bytes → data URI. Width/height come straight from
+/// the PNG IHDR header (big-endian u32s at offsets 16 and 20) — no image
+/// decoding crate needed on Android.
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn desktop_picture() -> Result<Screenshot, String> {
+    use base64::Engine as _;
+    if !has_root() {
+        return Err(android_unavailable("Capturing the screen"));
+    }
+    let path = "/data/local/tmp/jarvis_screen.png";
+    su_run(&format!("screencap -p {path}"))?;
+    let png = std::fs::read(path).map_err(|e| format!("couldn't read capture: {e}"))?;
+    let _ = std::fs::remove_file(path);
+    if png.len() < 24 || png[0..4] != [0x89, b'P', b'N', b'G'] {
+        return Err("capture produced an invalid image".into());
+    }
+    let be = |b: &[u8]| u32::from_be_bytes([b[0], b[1], b[2], b[3]]);
+    let width = be(&png[16..20]);
+    let height = be(&png[20..24]);
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
+    Ok(Screenshot {
+        data_uri: format!("data:image/png;base64,{b64}"),
+        width,
+        height,
+    })
+}
+
+/// Display size in the same space `input tap` uses — `wm size`, with or
+/// without root. If even that fails the frontend falls back to the
+/// screenshot's pixel dimensions.
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn screen_metrics() -> Result<ScreenMetrics, String> {
+    let out = su_run("wm size").or_else(|_| {
+        let o = std::process::Command::new("wm")
+            .arg("size")
+            .output()
+            .map_err(|e| e.to_string())?;
+        Ok(String::from_utf8_lossy(&o.stdout).trim().to_string())
+    })?;
+    // Lines look like "Physical size: 1080x2400" (plus an optional override).
+    for line in out.lines().rev() {
+        if let Some(size) = line.split(':').nth(1) {
+            let mut it = size.trim().split('x');
+            if let (Some(w), Some(h)) = (it.next(), it.next()) {
+                if let (Ok(w), Ok(h)) = (w.trim().parse::<i32>(), h.trim().parse::<i32>()) {
+                    return Ok(ScreenMetrics { width: w, height: h });
+                }
+            }
+        }
+    }
+    Err("couldn't determine screen size".into())
+}
+
+/// Launch apps by name: known package map first, then a fuzzy search over
+/// `pm list packages`. Launching doesn't need root on most devices.
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn launch_app(name: String) -> OkMsg {
+    let lowered = name.to_lowercase().trim().to_string();
+    let known: Option<&str> = match lowered.as_str() {
+        "camera" => Some("com.android.camera"),
+        "gallery" | "photos" => Some("com.miui.gallery"),
+        "chrome" | "browser" => Some("com.android.chrome"),
+        "youtube" => Some("com.google.android.youtube"),
+        "settings" => Some("com.android.settings"),
+        "phone" | "dialer" => Some("com.android.dialer"),
+        "messages" | "sms" => Some("com.android.mms"),
+        "whatsapp" => Some("com.whatsapp"),
+        "telegram" => Some("org.telegram.messenger"),
+        "instagram" => Some("com.instagram.android"),
+        "spotify" => Some("com.spotify.music"),
+        _ => None,
+    };
+    let launch = |pkg: &str| -> Result<String, String> {
+        su_run(&format!(
+            "monkey -p {pkg} -c android.intent.category.LAUNCHER 1"
+        ))
+        .map(|_| format!("Launched {pkg}."))
+        .or_else(|_| {
+            // am start needs the launcher activity; `cmd package resolve-activity`
+            // finds it. Root not required on most builds for either.
+            let act = su_run(&format!(
+                "cmd package resolve-activity --brief {pkg} | tail -n 1"
+            ))?;
+            let act = act.lines().next().unwrap_or("").trim().to_string();
+            if act.is_empty() {
+                return Err(format!("no launcher activity for {pkg}"));
+            }
+            su_run(&format!("am start -n {act}")).map(|_| format!("Launched {pkg}."))
+        })
+    };
+    if let Some(pkg) = known {
+        return match launch(pkg) {
+            Ok(m) => OkMsg { ok: true, message: m },
+            Err(e) => OkMsg { ok: false, message: e },
+        };
+    }
+    // Fuzzy: search installed packages for the requested name.
+    let list = su_run("pm list packages")
+        .or_else(|_| {
+            let o = std::process::Command::new("pm")
+                .arg("list")
+                .arg("packages")
+                .output()
+                .map_err(|e| e.to_string())?;
+            Ok(String::from_utf8_lossy(&o.stdout).trim().to_string())
+        })
+        .unwrap_or_default();
+    for line in list.lines() {
+        let pkg = line.trim().strip_prefix("package:").unwrap_or("").trim();
+        if pkg.contains(&lowered) {
+            return match launch(pkg) {
+                Ok(m) => OkMsg { ok: true, message: m },
+                Err(e) => OkMsg { ok: false, message: e },
+            };
+        }
+    }
+    OkMsg {
+        ok: false,
+        message: format!("Couldn't find an installed app matching \"{name}\"."),
+    }
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn open_url(app: tauri::AppHandle, url: String) -> Result<OkMsg, String> {
+    // Real on every Android device: hands the URL to the system browser.
+    use tauri_plugin_opener::OpenerExt;
+    match app.opener().open_url(url.clone(), None::<&str>) {
+        Ok(_) => Ok(OkMsg {
+            ok: true,
+            message: format!("Opened {url} in your browser."),
+        }),
+        Err(e) => Ok(OkMsg {
+            ok: false,
+            message: format!("Couldn't open {url}: {e}"),
+        }),
+    }
+}
+
+/// Run an arbitrary shell command — needs root, captures output.
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn execute_command(command: String, args: Option<Vec<String>>) -> OkMsg {
+    if !has_root() {
+        return OkMsg {
+            ok: false,
+            message: android_unavailable("Running shell commands"),
+        };
+    }
     let mut line = command.clone();
     if let Some(a) = args {
         if !a.is_empty() {
@@ -587,10 +856,20 @@ fn execute_command(command: String, args: Option<Vec<String>>) -> Result<serde_j
             line.push_str(&a.join(" "));
         }
     }
-    Ok(serde_json::json!({
-        "ok": false,
-        "message": format!("Running local commands isn't available in the Android build yet (tried: {line}).")
-    }))
+    match su_run(&line) {
+        Ok(out) => OkMsg {
+            ok: true,
+            message: if out.is_empty() {
+                format!("{command} ran (no output).")
+            } else {
+                out.chars().take(2000).collect()
+            },
+        },
+        Err(e) => OkMsg {
+            ok: false,
+            message: e,
+        },
+    }
 }
 
 // ---------------- Notifications (all platforms) ----------------
@@ -629,6 +908,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             system_info,
             system_info_stream,
+            root_status,
             mouse_move,
             mouse_click,
             mouse_double_click,
