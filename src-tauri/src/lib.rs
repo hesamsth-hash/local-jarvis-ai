@@ -3,6 +3,11 @@ use serde::Serialize;
 use std::sync::Mutex;
 use sysinfo::{Components, System};
 
+// enigo's trait methods (move_mouse, button, scroll, key, text, main_display)
+// must be in scope for the desktop input commands to compile.
+#[cfg(not(target_os = "android"))]
+use enigo::{Keyboard, Mouse};
+
 // JARVIS native backend.
 //
 // Desktop (Windows/macOS/Linux): full OS powers — input control (enigo),
