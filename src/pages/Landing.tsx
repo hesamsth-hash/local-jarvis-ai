@@ -147,10 +147,11 @@ export default function Landing() {
           transition={{ duration: 0.55, delay: 0.16 }}
           className="mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg"
         >
-          A voice-first assistant with a local brain: Kokoro speaks, Whisper
-          listens, and your own Ollama or KoboldCpp model plans real tools —
-          file operations, web search, weather, screen capture and more — right
-          inside your browser.
+          A voice-first assistant that works the moment you open it: Kokoro
+          speaks, Whisper listens, and a keyless AI brain plans real tools —
+          file operations, web search, weather, screen capture and more. Want
+          it fully offline? Bring your own Ollama or KoboldCpp — as a Windows
+          app or an Android APK.
         </motion.p>
 
         <motion.div
