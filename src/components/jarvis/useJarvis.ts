@@ -114,6 +114,8 @@ export function useJarvis() {
   connectedRef.current = connected;
   const llmRef = useRef(llm);
   llmRef.current = llm;
+  const llmStatusRef = useRef(llmStatus);
+  llmStatusRef.current = llmStatus;
 
   const logCommand = useMutation(api.jarvis.logCommand);
   const history = useQuery(api.jarvis.recentCommands, { limit: 12 });
@@ -217,6 +219,24 @@ export function useJarvis() {
     if (llm.enabled) void handleTestLlm();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Lazy retry: if the brain was unreachable at boot (keyless service busy,
+  // Wi-Fi still connecting…), re-test when the user actually sends something —
+  // at most once a minute — so a recovered brain is used for THIS message
+  // instead of dropping to local mode until a manual re-test.
+  const lastBrainProbeRef = useRef(0);
+  const ensureBrainProbed = useCallback(async () => {
+    const cfg = llmRef.current;
+    if (!cfg.enabled) return false;
+    if (Date.now() - lastBrainProbeRef.current < 60_000) return false;
+    lastBrainProbeRef.current = Date.now();
+    const online = await testConnection(cfg).catch(() => false);
+    if (online) {
+      await handleTestLlm(cfg);
+      return true;
+    }
+    return false;
+  }, [handleTestLlm]);
 
   // ---------- filesystem ----------
   const refreshFs = useCallback(async (path = "") => {
@@ -556,8 +576,15 @@ export function useJarvis() {
       setVoiceState("thinking");
       pushMessage({ id: uid(), role: "user", content: text, createdAt: Date.now() });
       try {
+        // was the brain down at boot? give it one quick re-probe first
+        const probed =
+          llmStatus !== "online" && llmStatus !== "testing"
+            ? await ensureBrainProbed()
+            : false;
         const ctx = toolCtx(process);
-        const llmReady = llmRef.current.enabled && llmStatus === "online";
+        const llmReady =
+          llmRef.current.enabled &&
+          (llmStatusRef.current === "online" || probed);
         const result: BrainResult = await runBrain(text, {
           speak,
           connected: connectedRef.current,

@@ -226,17 +226,17 @@ export async function runBrain(
   }
 
   // ---------- LLM + tool registry tier ----------
+  // If the brain fails at request time (keyless service busy, Ollama not
+  // running, network down), DON'T stop here — keep the error and fall through
+  // to the offline intent tiers below, so JARVIS always answers with the
+  // local no-model skills.
+  let llmError: string | null = null;
   if (deps.llmReady) {
     try {
       const result = await runLlmTurn(raw, deps);
       if (result) return result;
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "LLM request failed";
-      return {
-        reply: `Local model error: ${msg}. Check that the server is running and the model is loaded — falling back to offline intents.`,
-        intent: "llm.error",
-        ok: false,
-      };
+      llmError = e instanceof Error ? e.message : "LLM request failed";
     }
   }
 
@@ -247,8 +247,11 @@ export async function runBrain(
     return { reply, intent: "fs.undo", tool: "fs-tools", ok: true, refreshFs: true };
   }
 
+  // ("search X" normally means WEB search via the brain — if the brain just
+  // failed, skip file-search so the closing note explains what happened
+  // instead of asking for a folder.)
   const searchMatch = text.match(/^(?:search|find|look for)\s+(?:for\s+)?["']?(.+?)["']?$/);
-  if (searchMatch) {
+  if (searchMatch && !llmError) {
     if (!deps.connected) return needConnection("search files");
     const term = searchMatch[1];
     const { entries } = await listDir("");
@@ -362,6 +365,13 @@ export async function runBrain(
   }
 
   // ---------- fallback ----------
+  if (llmError) {
+    return {
+      reply: `The brain didn't answer (${llmError}) — handled that with my local skills instead. Say "help" for what works with no model; to fix the brain, hit Test in the Brain tab or switch to another one (LLM7.io / Kilo / OVHcloud are all keyless).`,
+      intent: "llm.fallback",
+      ok: true,
+    };
+  }
   return {
     reply: deps.llmReady
       ? 'I couldn\'t map that to a tool. Try naming the capability, e.g. "weather in Berlin", "search quantum computing", "screen", or "remind me in 20 minutes to stretch" — or say "make me a tool that …" and I\'ll build one for it.'
