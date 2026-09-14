@@ -98,17 +98,23 @@ export function routeElementTo(
   deviceId: string | null | undefined,
   volume?: number,
 ): void {
-  if (typeof volume === "number") {
-    el.volume = Math.min(1, Math.max(0, volume));
-  }
-  if (deviceId && deviceId !== DEFAULT_OUTPUT && deviceId !== "default") {
-    const sink = el as HTMLAudioElement & {
-      setSinkId?: (id: string) => Promise<void>;
-    };
-    if (typeof sink.setSinkId === "function") {
-      sink.setSinkId(deviceId).catch(() => {
-        // device vanished or unsupported — stay on the default output
-      });
+  try {
+    if (typeof volume === "number" && Number.isFinite(volume)) {
+      el.volume = Math.min(1, Math.max(0.0001, volume));
     }
+    if (deviceId && deviceId !== DEFAULT_OUTPUT && deviceId !== "default") {
+      const sink = el as HTMLAudioElement & {
+        setSinkId?: (id: string) => Promise<void>;
+      };
+      if (typeof sink.setSinkId === "function") {
+        // failure here (device unplugged, unsupported) must NEVER kill the
+        // speech — the element just stays on the system default.
+        sink.setSinkId(deviceId).catch(() => {
+          /* fell back to default output */
+        });
+      }
+    }
+  } catch {
+    // volume/sink quirks must never take down the whole speak()
   }
 }

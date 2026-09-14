@@ -122,9 +122,11 @@ export function useJarvis() {
   const [audioInput, setAudioInput] = useState<string | null>(
     () => audioPrefsRef.current.input ?? null,
   );
-  const [voiceVolume, setVoiceVolume] = useState<number>(
-    () => audioPrefsRef.current.volume ?? 1,
-  );
+  const [voiceVolume, setVoiceVolume] = useState<number>(() => {
+    const v = audioPrefsRef.current.volume;
+    // a saved 0/NaN volume would mute her forever — sanitize at load
+    return typeof v === "number" && Number.isFinite(v) && v > 0.01 ? v : 1;
+  });
   const audioOutputRef = useRef<string | null>(audioOutput);
   audioOutputRef.current = audioOutput;
   const audioInputRef = useRef<string | null>(audioInput);
@@ -198,6 +200,7 @@ export function useJarvis() {
   busyRef.current = busy;
   const speakHandleRef = useRef<{ stop: () => void } | null>(null);
   const focusTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const ttsReadyHintRef = useRef(false);
   const disabledRef = useRef(disabledTools);
   disabledRef.current = disabledTools;
   const connectedRef = useRef(connected);
@@ -541,6 +544,18 @@ export function useJarvis() {
         !ttsEngine.ready ||
         disabledRef.current.includes("kokoro-tts")
       ) {
+        // explain the silence once — "Download engines" is the usual fix
+        if (!ttsReadyHintRef.current && !ttsEngine.ready) {
+          ttsReadyHintRef.current = true;
+          pushMessage({
+            id: `tts-hint-${Date.now()}`,
+            role: "jarvis",
+            content:
+              "⚠︎ My voice isn't loaded yet — open the Voice tab and tap “Download engines” (one time, ~40 MB).",
+            createdAt: Date.now(),
+            intent: "tts.hint",
+          });
+        }
         return;
       }
       speakHandleRef.current?.stop();
@@ -552,8 +567,19 @@ export function useJarvis() {
         voiceVolumeRef.current,
       );
       speakHandleRef.current = handle;
+      // never silent-fail: a real playback problem becomes a console note
+      if (!handle && ttsEngine.lastError) {
+        pushMessage({
+          id: `tts-err-${Date.now()}`,
+          role: "jarvis",
+          content: `⚠︎ ${ttsEngine.lastError}`,
+          createdAt: Date.now(),
+          intent: "tts.error",
+          ok: false,
+        });
+      }
     },
-    [voice, speed],
+    [voice, speed, pushMessage],
   );
 
   const stopSpeaking = useCallback(() => {

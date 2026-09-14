@@ -44,6 +44,8 @@ class TtsEngine {
   private currentAudio: HTMLAudioElement | null = null;
   private currentUrl: string | null = null;
   onStateChange: ((speaking: boolean) => void) | null = null;
+  /** Last playback error, surfaced in the UI (blank = healthy). */
+  lastError: string | null = null;
 
   get ready() {
     return this.tts !== null;
@@ -111,7 +113,20 @@ class TtsEngine {
         this.onStateChange?.(false);
       };
       this.onStateChange?.(true);
-      await el.play();
+      try {
+        await el.play();
+        this.lastError = null;
+      } catch (playErr) {
+        // Chromium refuses .play() without a user gesture — say so instead of
+        // dying silently, and let a plain retry (user click) succeed.
+        this.onStateChange?.(false);
+        this.lastError =
+          playErr instanceof Error && /gesture|activation/i.test(playErr.message)
+            ? "Autoplay was blocked — click anywhere, then tap Test voice again."
+            : `Playback failed: ${playErr instanceof Error ? playErr.message : "unknown"}`;
+        console.error("TTS play failed:", playErr);
+        return null;
+      }
       return {
         stop: () => {
           el.pause();
@@ -122,6 +137,7 @@ class TtsEngine {
     } catch (e) {
       console.error("TTS speak failed:", e);
       this.onStateChange?.(false);
+      this.lastError = e instanceof Error ? e.message : "Speech generation failed";
       return null;
     }
   }
