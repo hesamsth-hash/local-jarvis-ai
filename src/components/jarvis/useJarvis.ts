@@ -20,6 +20,13 @@ import { androidFs, androidFsSupported } from "@/lib/jarvis/android-fs";
 import { startWakeWord, wakeWordSupported, type WakeHandle } from "@/lib/jarvis/wake-word";
 import { runBrain, type BrainResult } from "@/lib/jarvis/brain";
 import { ttsEngine } from "@/lib/jarvis/kokoro-tts";
+import {
+  findHeadphones,
+  listAudioInputs,
+  loadAudioPrefs,
+  realDevices,
+  saveAudioPrefs,
+} from "@/lib/jarvis/audio-devices";
 import { sttEngine } from "@/lib/jarvis/whisper-stt";
 import {
   resampleTo16k,
@@ -106,6 +113,54 @@ export function useJarvis() {
   const [autoSpeak, setAutoSpeak] = useState(
     () => loadVoicePrefs().autoSpeak ?? true,
   );
+
+  // audio output/input device picks (the "Windows sound settings" of JARVIS)
+  const audioPrefsRef = useRef(loadAudioPrefs());
+  const [audioOutput, setAudioOutput] = useState<string | null>(
+    () => audioPrefsRef.current.output ?? null,
+  );
+  const [audioInput, setAudioInput] = useState<string | null>(
+    () => audioPrefsRef.current.input ?? null,
+  );
+  const [voiceVolume, setVoiceVolume] = useState<number>(
+    () => audioPrefsRef.current.volume ?? 1,
+  );
+  const audioOutputRef = useRef<string | null>(audioOutput);
+  audioOutputRef.current = audioOutput;
+  const audioInputRef = useRef<string | null>(audioInput);
+  audioInputRef.current = audioInput;
+  const voiceVolumeRef = useRef<number>(voiceVolume);
+  voiceVolumeRef.current = voiceVolume;
+
+  const changeAudioOutput = useCallback((id: string | null) => {
+    setAudioOutput(id);
+    audioOutputRef.current = id;
+    saveAudioPrefs({
+      output: id,
+      input: audioInputRef.current,
+      volume: voiceVolumeRef.current,
+    });
+  }, []);
+
+  const changeAudioInput = useCallback((id: string | null) => {
+    setAudioInput(id);
+    audioInputRef.current = id;
+    saveAudioPrefs({
+      output: audioOutputRef.current,
+      input: id,
+      volume: voiceVolumeRef.current,
+    });
+  }, []);
+
+  const changeVoiceVolume = useCallback((v: number) => {
+    setVoiceVolume(v);
+    voiceVolumeRef.current = v;
+    saveAudioPrefs({
+      output: audioOutputRef.current,
+      input: audioInputRef.current,
+      volume: v,
+    });
+  }, []);
 
   // LLM / brain
   const [llm, setLlm] = useState<LlmConfig>(() => {
@@ -489,7 +544,13 @@ export function useJarvis() {
         return;
       }
       speakHandleRef.current?.stop();
-      const handle = await ttsEngine.speak(text, voice, speed);
+      const handle = await ttsEngine.speak(
+        text,
+        voice,
+        speed,
+        audioOutputRef.current,
+        voiceVolumeRef.current,
+      );
       speakHandleRef.current = handle;
     },
     [voice, speed],
@@ -827,6 +888,25 @@ export function useJarvis() {
           // voice modes + workspaces, controllable by voice as well
           onWakeWord: enableWakeWord,
           onHandsFree: enableHandsFree,
+          onAudioOutput: (id) => changeAudioOutput(id),
+          onAudioInput: (id) => {
+            // "set microphone to airpods" → resolve the name against the device list
+            if (id && id.startsWith("__by_name__:")) {
+              const want = id.slice("__by_name__:".length).toLowerCase();
+              void listAudioInputs().then((inputs) => {
+                const hit = realDevices(inputs).find(
+                  (d) =>
+                    (d.label || "").toLowerCase().includes(want) ||
+                    want.includes((d.label || "").toLowerCase().split(" (")[0]),
+                );
+                changeAudioInput(hit ? hit.deviceId : null);
+              });
+            } else {
+              changeAudioInput(id);
+            }
+          },
+          onVolume: (v) => changeVoiceVolume(v),
+          useHeadphones: switchToHeadphones,
           switchWorkspace: async (name) => {
             const target = workspacesRef.current.find(
               (w) =>
@@ -901,7 +981,7 @@ export function useJarvis() {
           (err) => setEngines((e2) => ({ ...e2, stt: "error", error: err })),
         );
       }
-      recorderRef.current = await startRecorder();
+      recorderRef.current = await startRecorder(audioInputRef.current);
       setVoiceState("listening");
     } catch {
       setVoiceState("offline");
@@ -1059,10 +1139,24 @@ export function useJarvis() {
     void process(text, "text");
   }, [input, process]);
 
+  // ---------- audio devices (speaker / mic picking) ----------
+  const switchToHeadphones = useCallback(async (): Promise<string> => {
+    const dev = await findHeadphones();
+    if (dev) {
+      changeAudioOutput(dev.deviceId);
+      return `Audio routed to ${dev.label || "headphones"}.`;
+    }
+    return "I couldn't spot headphones among your output devices — still on the current speaker.";
+  }, [changeAudioOutput]);
+
   return {
     messages, input, setInput, submit, busy, voiceState,
     engines, loadEngines,
     voice, setVoice, speed, setSpeed, autoSpeak, setAutoSpeak,
+    // audio devices
+    audioOutput, audioInput, voiceVolume,
+    changeAudioOutput, changeAudioInput, changeVoiceVolume,
+    switchToHeadphones,
     connected, rootLabel, fsPath, fsEntries, fsLoading,
     connectFolder, refreshFs, openEntry, resumeAccess, savedPermission, disconnectFolder,
     toggleListening, stopSpeaking, process,

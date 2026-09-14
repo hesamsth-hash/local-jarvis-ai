@@ -1,5 +1,19 @@
-import { Activity, Download, Mic, Palette, Volume2 } from "lucide-react";
-import { useState } from "react";
+import {
+  Activity,
+  Download,
+  Headphones,
+  Mic,
+  Palette,
+  RefreshCw,
+  Volume2,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  friendlyLabel,
+  listAudioInputs,
+  listAudioOutputs,
+  realDevices,
+} from "@/lib/jarvis/audio-devices";
 import { ACCENTS, applyAccent, loadAccent } from "@/lib/jarvis/theme";
 import { VoiceModeControls } from "./VoiceModeControls";
 import { Button } from "@/components/ui/button";
@@ -31,6 +45,14 @@ interface VoiceControlsProps {
   handsFree: boolean;
   onWakeWord: (on: boolean) => void;
   onHandsFree: (on: boolean) => void;
+  // audio devices (speakers + mic, Windows-settings style)
+  audioOutput: string | null;
+  audioInput: string | null;
+  voiceVolume: number;
+  onAudioOutputChange: (id: string | null) => void;
+  onAudioInputChange: (id: string | null) => void;
+  onVolumeChange: (v: number) => void;
+  onTestAudio: () => void;
 }
 
 function EngineRow({
@@ -90,10 +112,49 @@ export function VoiceControls({
   handsFree,
   onWakeWord,
   onHandsFree,
+  audioOutput,
+  audioInput,
+  voiceVolume,
+  onAudioOutputChange,
+  onAudioInputChange,
+  onVolumeChange,
+  onTestAudio,
 }: VoiceControlsProps) {
   const anyLoading = engines.tts === "loading" || engines.stt === "loading";
   const bothReady = engines.tts === "ready" && engines.stt === "ready";
   const [accent, setAccent] = useState(loadAccent);
+
+  // device lists — labels only populate once mic permission has been granted
+  const [outputs, setOutputs] = useState<MediaDeviceInfo[]>([]);
+  const [inputs, setInputs] = useState<MediaDeviceInfo[]>([]);
+  const [micUnlocked, setMicUnlocked] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    const refresh = async () => {
+      const [o, i] = await Promise.all([listAudioOutputs(), listAudioInputs()]);
+      if (!alive) return;
+      setOutputs(o);
+      setInputs(i);
+    };
+    void refresh();
+    navigator.mediaDevices?.addEventListener?.("devicechange", refresh);
+    return () => {
+      alive = false;
+      navigator.mediaDevices?.removeEventListener?.("devicechange", refresh);
+    };
+  }, [micUnlocked]);
+
+  // unlock device labels: browsers hide them until mic permission is granted
+  const unlockMicLabels = async () => {
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+      s.getTracks().forEach((t) => t.stop());
+    } catch {
+      // denied — pickers still work with generic labels
+    }
+    setMicUnlocked(true);
+  };
 
   return (
     <div className="space-y-4 p-4">
@@ -194,6 +255,110 @@ export function VoiceControls({
             className="flex-1"
           />
         </div>
+      </div>
+
+      {/* Audio devices — like the Windows sound settings, inside JARVIS */}
+      <div className="space-y-2.5">
+        <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          <Headphones className="size-3.5" />
+          Sound devices
+        </p>
+        <div>
+          <p className="mb-1 text-[10px] text-muted-foreground">
+            Speak out of (headphones, speakers, HDMI…)
+          </p>
+          <Select
+            value={audioOutput ?? "__default__"}
+            onValueChange={(v) =>
+              onAudioOutputChange(v === "__default__" ? null : v)
+            }
+          >
+            <SelectTrigger className="w-full text-xs">
+              <SelectValue placeholder="System default" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__default__" className="text-xs">
+                System default
+              </SelectItem>
+              {realDevices(outputs).map((d) => (
+                <SelectItem key={d.deviceId} value={d.deviceId} className="text-xs">
+                  {friendlyLabel(d)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <p className="mb-1 text-[10px] text-muted-foreground">
+            Listen through (microphone)
+          </p>
+          <Select
+            value={audioInput ?? "__default__"}
+            onValueChange={(v) =>
+              onAudioInputChange(v === "__default__" ? null : v)
+            }
+          >
+            <SelectTrigger className="w-full text-xs">
+              <SelectValue placeholder="System default" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__default__" className="text-xs">
+                System default
+              </SelectItem>
+              {realDevices(inputs).map((d) => (
+                <SelectItem key={d.deviceId} value={d.deviceId} className="text-xs">
+                  {friendlyLabel(d)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {inputs.every((d) => !d.label) && (
+            <button
+              className="mt-1 text-[10px] text-primary underline-offset-2 hover:underline"
+              onClick={() => void unlockMicLabels()}
+            >
+              Show real mic names (asks mic access once)
+            </button>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          <Volume2 className="size-3.5 shrink-0 text-muted-foreground" />
+          <Slider
+            value={[voiceVolume]}
+            onValueChange={(vals: number[]) => onVolumeChange(vals[0] ?? voiceVolume)}
+            min={0.1}
+            max={1}
+            step={0.05}
+            className="flex-1"
+          />
+          <span className="w-9 shrink-0 text-right font-mono text-[10px] text-muted-foreground">
+            {Math.round(voiceVolume * 100)}%
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 flex-1 gap-1.5 text-xs"
+            onClick={onTestAudio}
+          >
+            <Volume2 className="size-3" />
+            Test voice
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            title="Re-scan devices (or just plug in and the list updates itself)"
+            className="h-7 w-7 p-0"
+            onClick={() => void unlockMicLabels()}
+          >
+            <RefreshCw className="size-3.5" />
+          </Button>
+        </div>
+        <p className="text-[10px] leading-snug text-muted-foreground">
+          Picks stick after restart. Plug headphones in and out — the list follows,
+          and "use headphones" works by voice.
+        </p>
       </div>
 
       <VoiceModeControls

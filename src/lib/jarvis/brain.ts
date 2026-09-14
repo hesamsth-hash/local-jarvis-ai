@@ -62,6 +62,11 @@ export interface BrainDeps {
   /** Voice-mode hooks so "wake word on / hands-free on" work by voice too. */
   onWakeWord?: (on: boolean) => void;
   onHandsFree?: (on: boolean) => void;
+  /** Sound-device hooks — speakers, mic and volume, Windows-settings style. */
+  onAudioOutput?: (id: string | null) => void;
+  onAudioInput?: (id: string | null) => void;
+  onVolume?: (v: number) => void;
+  useHeadphones?: () => Promise<string>;
   /** Switch the active workspace; returns a spoken confirmation or null. */
   switchWorkspace?: (name: string) => Promise<string | null>;
 }
@@ -76,6 +81,7 @@ Offline (no LLM needed):
 • "rename <a> to <b>" · "move <a> to <dir>" · "delete <path>" · "undo delete"
 • "remember that …" — persistent memory · "what do you remember?" · "forget …"
 • "speak <text>" — Kokoro voice · "start/stop listening" — Whisper
+• "use headphones" · "speakers" · "set microphone to …" · "volume 40" — sound devices
 • "focus 25" — focus timer with a ping when it ends · "export transcript"
 • "battery" — device health (real values on rooted Android)
 • "bulk rename *.jpg to trip-" — rename all matching files at once
@@ -152,6 +158,37 @@ export async function runBrain(
     deps.onHandsFree?.(false);
     deps.onWakeWord?.(false);
     return { reply: "Voice modes off — back to push-to-talk.", intent: "voice.modes", ok: true };
+  }
+  // sound-device intents ("use headphones", "set microphone", "volume")
+  if (/^\s*(test (voice|audio|sound)|say something|audio check)\s*$/i.test(text)) {
+    return {
+      reply: "Audio check — if you can hear this, we're good, Sir.",
+      intent: "audio.test",
+      ok: true,
+    };
+  }
+  if (/\b(use|switch to|route (audio|sound) to|send (audio|sound) to)\b/i.test(text) && /headphones?|headset|earphones?|earbuds?/i.test(text)) {
+    const r = await deps.useHeadphones?.();
+    if (r) return { reply: r, intent: "audio.output", ok: true };
+  }
+  if (/\b(use|switch to|route (audio|sound) to|send (audio|sound) to)\b/i.test(text) && /\b(speakers?|default|laptop|monitor)\b/i.test(text)) {
+    deps.onAudioOutput?.(null);
+    return { reply: "Back on the system default speaker.", intent: "audio.output", ok: true };
+  }
+  const micSet = text.match(/\b(?:mic|microphone)\s+(?:to|→)?\s*(?:the\s+)?(.{2,60})$/i);
+  if (/\b(set|use|switch)\b/i.test(text) && /\b(mic|microphone)\b/i.test(text) && micSet && !/default/i.test(micSet[1])) {
+    deps.onAudioInput?.("__by_name__:" + micSet[1].trim().replace(/["'.]$/g, ""));
+    return { reply: `Microphone set — I'll capture from “${micSet[1].trim()}” when we next listen.`, intent: "audio.input", ok: true };
+  }
+  if (/\b(set|use|switch)\b/i.test(text) && /\b(mic|microphone)\b/i.test(text) && /default/i.test(text)) {
+    deps.onAudioInput?.(null);
+    return { reply: "Microphone back on the system default.", intent: "audio.input", ok: true };
+  }
+  const vol = text.match(/\b(?:volume|voice level)\s*(?:to|at)?\s*(\d{1,3})\s*(?:%|percent)?/i);
+  if (vol) {
+    const pct = Math.min(100, Math.max(0, Number(vol[1])));
+    deps.onVolume?.(pct / 100);
+    return { reply: `Voice volume set to ${pct} percent.`, intent: "audio.volume", ok: true };
   }
   // workspace switching (multiple folders / Android storage areas)
   if (/(switch|change)\s+(to\s+)?(workspace|folder|storage)/i.test(text) && !/connect|pick|add/i.test(text)) {

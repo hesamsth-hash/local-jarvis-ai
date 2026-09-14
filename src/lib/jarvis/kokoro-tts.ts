@@ -3,6 +3,7 @@
 // click or first command), keeping the app's first paint fast.
 
 import type { LoadedProgress } from "./types";
+import { routeElementTo } from "./audio-devices";
 
 const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 
@@ -88,6 +89,8 @@ class TtsEngine {
     text: string,
     voice: string,
     speed: number,
+    outputDeviceId?: string | null,
+    volume?: number,
   ): Promise<SpeakHandle | null> {
     if (!this.tts) return null;
     const clipped = text.length > 900 ? `${text.slice(0, 900)}…` : text;
@@ -101,6 +104,7 @@ class TtsEngine {
       if (this.currentUrl) URL.revokeObjectURL(this.currentUrl);
       this.currentUrl = URL.createObjectURL(blob);
       const el = new Audio(this.currentUrl);
+      routeElementTo(el, outputDeviceId, volume);
       this.currentAudio = el;
       el.onended = () => {
         this.currentAudio = null;

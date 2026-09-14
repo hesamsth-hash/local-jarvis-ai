@@ -337,6 +337,15 @@ export default function Dashboard() {
                 handsFree={jarvis.handsFree}
                 onWakeWord={jarvis.enableWakeWord}
                 onHandsFree={jarvis.enableHandsFree}
+                audioOutput={jarvis.audioOutput}
+                audioInput={jarvis.audioInput}
+                voiceVolume={jarvis.voiceVolume}
+                onAudioOutputChange={jarvis.changeAudioOutput}
+                onAudioInputChange={jarvis.changeAudioInput}
+                onVolumeChange={jarvis.changeVoiceVolume}
+                onTestAudio={() =>
+                  void jarvis.process("test voice", "text")
+                }
               />
             </TabsContent>
             <TabsContent value="brain" className="px-0 pb-3">

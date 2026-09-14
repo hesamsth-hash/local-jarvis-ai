@@ -1,4 +1,4 @@
-// Mic recorder — captures Float32 PCM from the default input device.
+// Mic recorder — captures Float32 PCM, optionally from a chosen input device.
 
 export interface RecordingResult {
   audio: Float32Array;
@@ -13,8 +13,23 @@ type LegacyProcessor = ScriptProcessorNode & {
   onaudioprocess: ((e: AudioProcessingEvent) => void) | null;
 };
 
-export async function startRecorder(): Promise<RecorderHandle> {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+export async function startRecorder(deviceId?: string | null): Promise<RecorderHandle> {
+  let stream: MediaStream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: deviceId
+        ? {
+            // exact: true fails hard if the device was unplugged — we fall back
+            deviceId: { exact: deviceId },
+            echoCancellation: true,
+            noiseSuppression: true,
+          }
+        : true,
+    });
+  } catch {
+    // chosen mic vanished — retry with the system default
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  }
   const ctx = new AudioContext();
   const source = ctx.createMediaStreamSource(stream);
   const processor = ctx.createScriptProcessor(4096, 1, 1) as LegacyProcessor;
