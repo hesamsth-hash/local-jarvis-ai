@@ -258,7 +258,7 @@ export async function runBrain(
   // ---------- archive + duplicate tools (offline, workspace-level) ----------
   if (/^\s*(zip|unzip|extract)\b/i.test(raw) || /^\s*(hash|checksum|sha256?)\s+\S/i.test(raw)) {
     if (!deps.connected) return needConnection("work with archives");
-    const r = await executeTool("fs", raw.trim(), deps.toolCtx);
+    const r = await executeTool("file_controller", raw.trim(), deps.toolCtx);
     return { reply: r.data, intent: "fs.archive", tool: "file_controller", ok: r.ok, refreshFs: true };
   }
   if (/\bduplicate/i.test(text)) {
@@ -267,7 +267,7 @@ export async function runBrain(
     const del = /\b(delete|remove|clean|trash)\b/i.test(text);
     const confirm = /\bconfirm\b/i.test(text);
     const argStr = del ? `duplicates delete ${arg}${confirm ? " confirm" : ""}` : `duplicates ${arg}`;
-    const r = await executeTool("fs", argStr, deps.toolCtx);
+    const r = await executeTool("file_controller", argStr, deps.toolCtx);
     return { reply: r.data, intent: "fs.duplicates", tool: "file_controller", ok: r.ok, refreshFs: del && confirm };
   }
 
