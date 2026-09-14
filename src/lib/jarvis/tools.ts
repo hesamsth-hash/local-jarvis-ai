@@ -645,7 +645,7 @@ export const TOOLS: JarvisTool[] = [
     category: "files",
     description: "List, read, write, rename, move and delete local files.",
     llmDescription:
-      'local file operations on the connected workspace — actions: list [path], read <path>, write <path> with <text>, mkdir <path>, rename <a> to <b>, move <a> to <dir>, delete <path>, search <term>, undo',
+      'local file operations on the connected workspace — actions: list [path], read <path>, write <path> with <text>, mkdir <path>, rename <a> to <b>, move <a> to <dir>, delete <path>, search <term>, undo, zip <sources> into <name>.zip, unzip <archive> [into <folder>], hash <path>, duplicates [*.<ext>] [delete [confirm]]',
     argHint: "action + args",
     handler: async (arg, ctx) => ctx.sub("fs", arg),
   },

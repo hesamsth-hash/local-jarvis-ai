@@ -85,6 +85,8 @@ Offline (no LLM needed):
 • "focus 25" — focus timer with a ping when it ends · "export transcript"
 • "battery" — device health (real values on rooted Android)
 • "bulk rename *.jpg to trip-" — rename all matching files at once
+• "zip <folder|file> into <name>.zip" · "unzip <name>.zip [into folder]" · "hash <file>" — archives + checksums
+• "find duplicates" / "find duplicates *.jpg" — content-hash duplicate scan · "delete duplicates confirm" reclaims the space
 • "continue" — pick up where we left off · "time", "date", "status", "help"
 
 With a brain connected (keyless cloud by default — or your own Ollama / Kobold / LM Studio) you also get:
@@ -251,6 +253,22 @@ export async function runBrain(
     if (!deps.connected) return needConnection("bulk rename files");
     const r = await executeTool("bulk_rename", raw.replace(/^(?:bulk[- ]?rename|rename all|rename every)\s+/i, ""), deps.toolCtx);
     return { reply: r.data, intent: "fs.bulkrename", tool: "bulk_rename", ok: r.ok, refreshFs: true };
+  }
+
+  // ---------- archive + duplicate tools (offline, workspace-level) ----------
+  if (/^\s*(zip|unzip|extract)\b/i.test(raw) || /^\s*(hash|checksum|sha256?)\s+\S/i.test(raw)) {
+    if (!deps.connected) return needConnection("work with archives");
+    const r = await executeTool("fs", raw.trim(), deps.toolCtx);
+    return { reply: r.data, intent: "fs.archive", tool: "file_controller", ok: r.ok, refreshFs: true };
+  }
+  if (/\bduplicate/i.test(text)) {
+    if (!deps.connected) return needConnection("find duplicates");
+    const arg = /\*(?:\.\w+)?/.test(raw) ? raw.match(/\*(?:\.\w+)?/)![0] : "*";
+    const del = /\b(delete|remove|clean|trash)\b/i.test(text);
+    const confirm = /\bconfirm\b/i.test(text);
+    const argStr = del ? `duplicates delete ${arg}${confirm ? " confirm" : ""}` : `duplicates ${arg}`;
+    const r = await executeTool("fs", argStr, deps.toolCtx);
+    return { reply: r.data, intent: "fs.duplicates", tool: "file_controller", ok: r.ok, refreshFs: del && confirm };
   }
 
   if (/\b(time|clock)\b/.test(text) && text.length < 30) {

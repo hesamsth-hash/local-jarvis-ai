@@ -17,6 +17,10 @@ export interface FsBackend {
   restoreLastDeleted(): Promise<string>;
   exists(path: string): Promise<boolean>;
   name(): string | null;
+  /** Binary read — required for archive/hash features. */
+  readFileBytes?(path: string): Promise<Uint8Array<ArrayBuffer>>;
+  /** Binary write — required for archive/hash features. */
+  writeFileBytes?(path: string, bytes: Uint8Array<ArrayBuffer>): Promise<string>;
 }
 
 let androidBackend: FsBackend | null = null;
@@ -441,6 +445,30 @@ export async function readFile(path: string): Promise<string> {
   const fh = await dir.getFileHandle(name);
   const file = await fh.getFile();
   return await file.text();
+}
+
+/** Binary read — works on both the browser and Android-root backends. */
+export async function readFileBytes(path: string): Promise<Uint8Array<ArrayBuffer>> {
+  if (androidBackend?.readFileBytes) return androidBackend.readFileBytes(path);
+  const { dir, name } = await resolveDir(path);
+  const fh = await dir.getFileHandle(name);
+  const file = await fh.getFile();
+  return new Uint8Array(await file.arrayBuffer());
+}
+
+/** Binary write — works on both the browser and Android-root backends. */
+export async function writeFileBytes(
+  path: string,
+  bytes: Uint8Array<ArrayBuffer>,
+): Promise<string> {
+  if (androidBackend?.writeFileBytes)
+    return androidBackend.writeFileBytes(path, bytes);
+  const { dir, name } = await resolveDir(path, true);
+  const fh = await dir.getFileHandle(name, { create: true });
+  const writable = await fh.createWritable();
+  await writable.write(bytes);
+  await writable.close();
+  return `Wrote ${bytes.length} bytes to ${path}`;
 }
 
 export async function writeFile(path: string, content: string): Promise<string> {

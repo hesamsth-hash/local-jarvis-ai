@@ -145,6 +145,37 @@ export const androidFs: FsBackend = {
     const out = await sh(`[ -e ${shellQuote(target)} ] && echo Y || echo N`);
     return out.includes("Y");
   },
+
+  // ---------- binary IO (archive / hash features) ----------
+
+  async readFileBytes(path): Promise<Uint8Array<ArrayBuffer>> {
+    const target = joinPath(DEFAULT_ROOT, path.replace(/^[/\\]+|[/\\]+$/g, ""));
+    const b64 = await sh(`base64 < ${shellQuote(target)} | tr -d '\n'`);
+    const bin = atob(b64.trim());
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  },
+
+  async writeFileBytes(path, bytes: Uint8Array<ArrayBuffer>): Promise<string> {
+    const target = joinPath(DEFAULT_ROOT, path.replace(/^[/\\]+|[/\\]+$/g, ""));
+    // Android caps a single argv at ~128KB, so base64 goes to a temp file in
+    // small appended chunks, then decodes once at the end.
+    let bin = "";
+    const CH = 0x8000;
+    for (let i = 0; i < bytes.length; i += CH) {
+      bin += String.fromCharCode(...bytes.subarray(i, i + CH));
+    }
+    const b64 = btoa(bin);
+    const tmp = `${target}.b64.tmp`;
+    const CHUNK = 60000; // safely under the argv cap
+    await sh(`mkdir -p $(dirname ${shellQuote(target)}) && : > ${shellQuote(tmp)}`);
+    for (let i = 0; i < b64.length; i += CHUNK) {
+      await sh(`echo -n ${shellQuote(b64.slice(i, i + CHUNK))} >> ${shellQuote(tmp)}`);
+    }
+    await sh(`base64 -d ${shellQuote(tmp)} > ${shellQuote(target)} && rm -f ${shellQuote(tmp)}`);
+    return `Wrote ${bytes.length} bytes to ${target}`;
+  },
 };
 
 /** Rooted-device filesystem, mapped as additional "workspaces" (no picker needed). */

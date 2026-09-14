@@ -36,6 +36,70 @@ export async function runFsAction(
       : `${path || "workspace root"} is empty.`;
 
   try {
+    // zip <sources> into <name>.zip
+    if (/^zip\b/i.test(text)) {
+      const { zipFolderOrFiles } = await import("./archive");
+      const m = a.match(/^zip\s+(.+?)\s+(?:into|to|as)\s+["']?([\w\- .]+\.zip)["']?$/i);
+      if (!m) {
+        return {
+          ok: false,
+          data: 'Try: "zip projects into backup.zip" (folders or files, space-separated).',
+        };
+      }
+      const sources = m[1].split(/,|\band\b/).map((s) => s.replace(/["']/g, "").trim()).filter(Boolean);
+      const zipName = m[2].replace(/["']/g, "").trim();
+      if (await exists(zipName)) {
+        return { ok: false, data: `"${zipName}" already exists — pick a different archive name.` };
+      }
+      return { ok: true, data: await zipFolderOrFiles(sources, zipName) };
+    }
+
+    // unzip <archive> [into <folder>]
+    if (/^(unzip|extract)\b/i.test(text)) {
+      const { unzipInto } = await import("./archive");
+      const m = a.match(/^(?:unzip|extract)\s+["']?([\w\- ./]+\.zip)["']?(?:\s+(?:into|to|in)\s+["']?([\w\- ./]+)["']?)?$/i);
+      if (!m) {
+        return {
+          ok: false,
+          data: 'Try: "unzip backup.zip" or "unzip backup.zip into extracted".',
+        };
+      }
+      const zipPath = m[1].replace(/["']/g, "").trim();
+      const dest = (m[2]?.replace(/["']/g, "").trim()) || zipPath.replace(/\.zip$/i, "");
+      return { ok: true, data: await unzipInto(zipPath, dest) };
+    }
+
+    // hash / checksum <path>
+    if (/^(hash|checksum|sha)\b/i.test(text)) {
+      const { describeFileHash } = await import("./archive");
+      const path = a.replace(/^(hash|checksum|sha256|sha)\s*/i, "").replace(/["']/g, "").trim();
+      if (!path) return { ok: false, data: 'Try: "hash notes.txt".' };
+      if (!(await exists(path))) return { ok: false, data: `"${path}" doesn't exist in the workspace.` };
+      return { ok: true, data: await describeFileHash(path) };
+    }
+
+    // duplicate finder
+    if (/duplicate/i.test(text)) {
+      const { findDuplicates, describeDupReport, deleteDuplicates } = await import("./archive");
+      const patternM = a.match(/\*\.[a-z0-9]+|\*/i);
+      const pattern = patternM ? patternM[0] : "*";
+      if (/\b(delete|remove|clean|trash)\b/i.test(text)) {
+        if (!/\bconfirm\b/i.test(text)) {
+          const r = await findDuplicates("", pattern);
+          const n = r.groups.reduce((acc, g) => acc + g.files.length - 1, 0);
+          return {
+            ok: n > 0,
+            data: n > 0
+              ? `${n} duplicate file${n === 1 ? "" : "s"} found. Say "delete duplicates confirm" to trash them (undo-able).`
+              : "No duplicates to delete.",
+          };
+        }
+        return { ok: true, data: await deleteDuplicates("", pattern) };
+      }
+      const report = await findDuplicates("", pattern);
+      return { ok: true, data: describeDupReport(report) };
+    }
+
     // list [path]
     const listM = a.match(/^(?:list|ls|show|browse|what.s in|explore)?\s*(.*)$/i);
     if (/^(list|ls|show|browse|explore)/i.test(text) || text === "") {
