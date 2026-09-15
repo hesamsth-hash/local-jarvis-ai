@@ -4,6 +4,7 @@ import {
   AudioLines,
   BrainCircuit,
   Cpu,
+  Brain,
   Download,
   FolderOpen,
   History,
@@ -25,6 +26,7 @@ import { ChatPanel } from "@/components/jarvis/ChatPanel";
 import { FileDeck } from "@/components/jarvis/FileDeck";
 import { JarvisOrb } from "@/components/jarvis/JarvisOrb";
 import { MediaViewer } from "@/components/jarvis/MediaViewer";
+import { MemoryPanel } from "@/components/jarvis/MemoryPanel";
 import { ModelSettings } from "@/components/jarvis/ModelSettings";
 import { PluginBay } from "@/components/jarvis/PluginBay";
 import { VoiceControls } from "@/components/jarvis/VoiceControls";
@@ -292,7 +294,7 @@ export default function Dashboard() {
         {/* Right column */}
         <aside className="flex min-w-0 flex-col gap-4">
           <Tabs defaultValue="voice" className="hud-panel rounded-md">
-            <TabsList className="mx-3 mt-3 grid h-auto w-auto grid-cols-4 rounded-md border border-primary/15 bg-muted/40">
+            <TabsList className="mx-3 mt-3 grid h-auto w-auto grid-cols-5 rounded-md border border-primary/15 bg-muted/40">
               <TabsTrigger
                 value="voice"
                 className="gap-1 px-2 font-mono text-[11px] uppercase tracking-wider data-[state=active]:text-primary"
@@ -313,6 +315,13 @@ export default function Dashboard() {
               >
                 <Puzzle className="size-3.5" />
                 Tools
+              </TabsTrigger>
+              <TabsTrigger
+                value="memory"
+                className="gap-1 px-2 font-mono text-[11px] uppercase tracking-wider data-[state=active]:text-primary"
+              >
+                <Brain className="size-3.5" />
+                Memory
               </TabsTrigger>
               <TabsTrigger
                 value="files"
@@ -365,6 +374,9 @@ export default function Dashboard() {
                 plugins={jarvis.plugins}
                 onRemovePlugin={jarvis.uninstallPlugin}
               />
+            </TabsContent>
+            <TabsContent value="memory" className="max-h-[420px] overflow-y-auto px-0 pb-3">
+              <MemoryPanel />
             </TabsContent>
             <TabsContent value="files" className="h-[420px] px-0 pb-3">
               <FileDeck

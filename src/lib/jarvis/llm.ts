@@ -423,10 +423,10 @@ export async function visionLocate(
   const url = cfg.provider === "pollinations" ? normalizeUrl(cfg.url) : apiBase(cfg.url);
   const chatPath = cfg.provider === "pollinations" ? "/openai" : "/v1/chat/completions";
   const instr = `You are the vision system of a computer-control assistant. Locate: "${description}".
-The image is a full screenshot, ${screenW}x${screenH} pixels.
+The image is a full screenshot, ${screenW}x${screenH} pixels. Inspect text, icons, controls, layout, and visual state; do not guess from the request alone.
 Reply with ONLY a JSON object, nothing else:
-{"x":<center x of the target>,"y":<center y of the target>,"description":"<what you found>"}
-If the target is not visible, reply with {"notfound":true}`;
+{"x":<center x of the target>,"y":<center y of the target>,"description":"<what you found>","confidence":<0 to 1>}
+If the target is not visible or confidence is below 0.45, reply with {"notfound":true}`;
   try {
     let reply: string;
     if (cfg.provider === "ollama") {
@@ -482,9 +482,10 @@ If the target is not visible, reply with {"notfound":true}`;
       x?: number;
       y?: number;
       description?: string;
+      confidence?: number;
       notfound?: boolean;
     };
-    if (obj.notfound || typeof obj.x !== "number" || typeof obj.y !== "number") {
+    if (obj.notfound || typeof obj.x !== "number" || typeof obj.y !== "number" || (typeof obj.confidence === "number" && obj.confidence < 0.45)) {
       return { raw: reply, error: `I couldn't find "${description}" on screen.` };
     }
     // Model may answer in a 0-1000 normalized space — scale if clearly out of bounds.

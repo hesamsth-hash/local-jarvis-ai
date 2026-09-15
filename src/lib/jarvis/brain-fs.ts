@@ -17,6 +17,7 @@ import type { ToolResult } from "./tools";
 export async function runFsAction(
   arg: string,
   isConnected: () => boolean,
+  confirmAction?: (title: string, detail: string) => Promise<boolean>,
 ): Promise<ToolResult> {
   if (!isConnected()) {
     return {
@@ -161,6 +162,9 @@ export async function runFsAction(
       }
       if (!(await exists(path))) {
         return { ok: false, data: `"${path}" doesn't exist in the workspace.` };
+      }
+      if (confirmAction && !(await confirmAction("Delete local file", `JARVIS is about to move "${path}" to the undoable trash.`))) {
+        return { ok: false, data: "Cancelled — nothing was deleted." };
       }
       return { ok: true, data: await deletePath(path) };
     }

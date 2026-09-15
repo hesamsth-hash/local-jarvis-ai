@@ -27,6 +27,8 @@ export interface ToolContext {
   desktop: boolean;
   /** Local LLM config — used by vision tools (See & Act) */
   llm: import("./llm").LlmConfig;
+  /** Interface-issued approval for actions with destructive or system side effects. */
+  confirmAction?: (title: string, detail: string) => Promise<boolean>;
 }
 
 export interface ToolCategory {

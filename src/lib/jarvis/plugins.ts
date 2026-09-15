@@ -11,10 +11,16 @@
 // ---------- types ----------
 
 export interface PluginSpec {
+  /** Stable manifest version so plugins can evolve without core changes. */
+  manifestVersion: 1;
   id: string; // slug, e.g. "hacker-news"
   name: string;
   description: string; // one line, shown in UI + fed to the model
   argHint: string; // what "arg" is, e.g. "query"
+  /** Self-described capabilities shown to the model and plugin panel. */
+  capabilities: string[];
+  /** Explicitly declared side effects; the runtime can gate these later. */
+  permissions: ("network" | "open" | "notify" | "desktop")[];
   code: string; // body of async function run(args, jv) — see sandbox
   createdAt: number;
   source: "jarvis" | "user";
@@ -302,6 +308,8 @@ export async function savePlugin(spec: {
   description: string;
   argHint?: string;
   code: string;
+  capabilities?: string[];
+  permissions?: ("network" | "open" | "notify" | "desktop")[];
   source?: "jarvis" | "user";
 }): Promise<PluginSaveResult> {
   const slug =
@@ -316,9 +324,12 @@ export async function savePlugin(spec: {
     name: spec.name.trim() || slug,
     description: spec.description.trim() || "Custom tool",
     argHint: spec.argHint?.trim() || "input",
+    capabilities: spec.capabilities?.filter(Boolean).slice(0, 8) ?? ["custom action"],
+    permissions: spec.permissions ?? ["network"],
     code: spec.code,
     createdAt: Date.now(),
     source: spec.source ?? "jarvis",
+    manifestVersion: 1,
   };
   const ok = await idbPut(plugin);
   if (!ok) {

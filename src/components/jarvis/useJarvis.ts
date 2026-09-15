@@ -659,7 +659,11 @@ export function useJarvis() {
           // ----- Filesystem -----
           case "fs": {
             const mod = await import("@/lib/jarvis/brain-fs");
-            return mod.runFsAction(a, () => connectedRef.current);
+            return mod.runFsAction(
+              a,
+              () => connectedRef.current,
+              (title, detail) => toolCtx(process).confirmAction?.(title, detail) ?? Promise.resolve(false),
+            );
           }
           // ----- Code helper / dev agent -----
           case "code": {
@@ -864,6 +868,10 @@ export function useJarvis() {
       connected: connectedRef.current,
       desktop: isDesktop(),
       llm: llmRef.current,
+      confirmAction: async (title, detail) => {
+        if (typeof window === "undefined") return false;
+        return window.confirm(`${title}\n\n${detail}\n\nThis action requires your approval.`);
+      },
     }),
     [capture, notify, connectFolder, openExternal],
   );
@@ -886,6 +894,17 @@ export function useJarvis() {
         const llmReady =
           llmRef.current.enabled &&
           (llmStatusRef.current === "online" || probed);
+        // Immediate acknowledgement keeps long local-model/tool operations from
+        // feeling like the microphone stopped listening.
+        if (llmReady || /search|web|weather|read|summar|review|screen|vision|zip|unzip|duplicate|install|open app|code/i.test(text)) {
+          pushMessage({
+            id: uid(),
+            role: "system",
+            content: "On it — I’m working on that now.",
+            createdAt: Date.now(),
+            intent: "task.ack",
+          });
+        }
         // conversation context: last few turns (user + jarvis only)
         const history = messagesRef.current
           .filter(
@@ -933,6 +952,8 @@ export function useJarvis() {
           },
           onVolume: (v) => changeVoiceVolume(v),
           useHeadphones: switchToHeadphones,
+          confirmAction: (title, detail) =>
+            ctx.confirmAction?.(title, detail) ?? Promise.resolve(false),
           switchWorkspace: async (name) => {
             const target = workspacesRef.current.find(
               (w) =>

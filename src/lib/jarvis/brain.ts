@@ -69,6 +69,8 @@ export interface BrainDeps {
   useHeadphones?: () => Promise<string>;
   /** Switch the active workspace; returns a spoken confirmation or null. */
   switchWorkspace?: (name: string) => Promise<string | null>;
+  /** Human approval issued by the interface before destructive/system actions. */
+  confirmAction?: (title: string, detail: string) => Promise<boolean>;
 }
 
 const HELP_TEXT = `Here's what I can do, all locally:
@@ -408,6 +410,9 @@ export async function runBrain(
     }
     if (!(await exists(path))) {
       return { reply: `"${path}" doesn't exist in the workspace.`, intent: "fs.delete", ok: false };
+    }
+    if (deps.confirmAction && !(await deps.confirmAction("Delete local file", `JARVIS is about to move "${path}" to the undoable trash.`))) {
+      return { reply: "Cancelled — nothing was deleted.", intent: "fs.delete", ok: false };
     }
     const reply = await deletePath(path);
     return { reply, intent: "fs.delete", tool: "fs-tools", ok: true, refreshFs: true };
