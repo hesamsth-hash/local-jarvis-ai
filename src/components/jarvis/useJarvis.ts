@@ -229,6 +229,24 @@ export function useJarvis() {
     }
   }, [llm]);
 
+  // Switching brains (preset chip / URL) must not keep the previous server's
+  // model list or "online" badge — that's what made the picker look bugged
+  // (stale models, test state stuck). Skip the reset when the failover logic
+  // adopts a working keyless brain mid-request; it manages its own status.
+  const llmEndpointRef = useRef(`${llm.provider}|${llm.url}`);
+  const llmAdoptingRef = useRef(false);
+  useEffect(() => {
+    const key = `${llm.provider}|${llm.url}`;
+    if (key === llmEndpointRef.current) return;
+    llmEndpointRef.current = key;
+    if (llmAdoptingRef.current) {
+      llmAdoptingRef.current = false;
+      return;
+    }
+    setModels([]);
+    setLlmStatus("untested");
+  }, [llm]);
+
   // persist voice prefs (voice pick + speed + auto-speak survive restarts)
   useEffect(() => {
     try {
@@ -937,6 +955,7 @@ export function useJarvis() {
           history,
           // a failover preset proved alive → adopt it silently
           onBrainAdopted: (cfg) => {
+            llmAdoptingRef.current = true; // endpoint effect must not reset status
             setLlm(cfg);
             setLlmStatus("online");
           },

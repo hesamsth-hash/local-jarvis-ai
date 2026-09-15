@@ -1,6 +1,8 @@
 import {
   desktopLaunchApp,
   desktopSystemInfo,
+  ensureRootForCommand,
+  isAndroid,
 } from "./desktop-bridge";
 
 // Tool registry — every JARVIS capability, grouped by category.
@@ -120,6 +122,13 @@ export function describeDangerousAction(id: string, arg: string): { title: strin
         detail: trimmed
           ? `The model wants to run a bulk operation on your files: "${trimmed}".`
           : "The model wants to run a bulk operation on your files.",
+      };
+    case "see_act":
+      return {
+        title: "Vision-guided action",
+        detail: trimmed
+          ? `The model wants to look at the screen and act on "${trimmed}" — real clicks/drags/keystrokes on whatever it finds.`
+          : "The model wants to look at the screen and act on it — real clicks, drags and keystrokes.",
       };
     default:
       return {
@@ -419,6 +428,7 @@ export const TOOLS: JarvisTool[] = [
     id: "open_app",
     name: "Open App",
     category: "system",
+    dangerous: true,
     description:
       "Launches real apps via the desktop bridge, or URL schemes in the browser.",
     llmDescription:
@@ -443,6 +453,7 @@ export const TOOLS: JarvisTool[] = [
     id: "execute",
     name: "Execute",
     category: "system",
+    dangerous: true,
     description:
       "Launches ANY program, script, document or folder — by name or full path.",
     llmDescription:
@@ -464,6 +475,7 @@ export const TOOLS: JarvisTool[] = [
     id: "see_act",
     name: "See & Act",
     category: "system",
+    dangerous: true,
     description:
       "Vision-guided control: screenshots the screen, visually finds what you describe, then clicks/drags/draws on it.",
     llmDescription:
@@ -639,6 +651,7 @@ export const TOOLS: JarvisTool[] = [
     id: "computer_control",
     name: "Computer Control",
     category: "system",
+    dangerous: true,
     description:
       "Move/click the mouse, scroll, press keys, type — real control in the desktop app.",
     llmDescription:
@@ -960,6 +973,7 @@ export const TOOLS: JarvisTool[] = [
     id: "install_tool",
     name: "Install Software",
     category: "system",
+    dangerous: true,
     description:
       "Installs a real Windows program via winget (desktop app) — JARVIS sets it up itself.",
     llmDescription:
@@ -1073,6 +1087,16 @@ export async function executeTool(
         ok: false,
         data: `Cancelled — the user did not approve "${title}". Do not retry the same action; ask the user what they'd like instead.`,
       };
+    }
+  }
+  // Android: re-verify root RIGHT before a root-gated action runs. KernelSU
+  // grants can be session-only or revoked — probing `su id` here (and popping
+  // the grant dialog if it lapsed) is why a command stops failing with
+  // "root access not available" while the card still says granted.
+  if (tool.dangerous && isAndroid()) {
+    const root = await ensureRootForCommand();
+    if (!root.ok) {
+      return { ok: false, data: root.message ?? "Root access isn't available right now." };
     }
   }
   try {
