@@ -20,16 +20,16 @@ export interface LlmConfig {
   presetId?: string;
 }
 
-// Default brain = keyless cloud (Pollinations): zero setup, works instantly.
-// Users who want 100% offline can switch to Ollama/Kobold in the Brain tab.
+// Local-first default: the model runs through Ollama on this device.
+// Keyless/cloud providers remain available as explicit fallback presets in the Brain tab.
 export const DEFAULT_LLM_CONFIG: LlmConfig = {
   enabled: true,
-  provider: "pollinations",
-  url: "https://text.pollinations.ai",
+  provider: "ollama",
+  url: "http://localhost:11434",
   model: "",
   visionModel: "",
   apiKey: "",
-  presetId: "pollinations",
+  presetId: "ollama",
 };
 
 export const PRESETS: {
@@ -284,7 +284,7 @@ export async function listModels(cfg: LlmConfig): Promise<ModelInfo[]> {
 }
 
 const SYSTEM_PROMPT = `You are JARVIS, a local personal assistant running on the user's own machine.
-You control tools on the user's device. Be concise and helpful (2-4 sentences unless asked for more).
+The configured model is the primary brain: reason about the request, use memory when relevant, choose tools/plugins when needed, and plan multi-step tasks instead of relying on hard-coded keyword replies. Be concise and helpful (2-4 sentences unless asked for more).
 When a task matches one of your tools, reply with EXACTLY one JSON object and nothing else:
 {"tool":"<tool_id>","args":{...}}
 Available tools and their args:
