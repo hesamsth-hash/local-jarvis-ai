@@ -25,6 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ChatPanel } from "@/components/jarvis/ChatPanel";
 import { FileDeck } from "@/components/jarvis/FileDeck";
 import { JarvisOrb } from "@/components/jarvis/JarvisOrb";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { MediaViewer } from "@/components/jarvis/MediaViewer";
 import { MemoryPanel } from "@/components/jarvis/MemoryPanel";
 import { SessionBrief } from "@/components/jarvis/SessionBrief";
@@ -464,6 +465,33 @@ export default function Dashboard() {
         label={jarvis.media?.kind === "screen" ? "Screen share" : "Webcam"}
         onClose={jarvis.closeMedia}
       />
+
+      {/* Confirmation gate — real dialog for LLM-chosen dangerous actions.
+          The title/detail are generated from the exact tool + args the model
+          picked, so the user always sees what will actually happen. */}
+      <AlertDialog
+        open={jarvis.confirmState?.open ?? false}
+        onOpenChange={(open) => {
+          if (!open) jarvis.settleConfirm(false);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{jarvis.confirmState?.title ?? "Confirm"}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {jarvis.confirmState?.detail ?? ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => jarvis.settleConfirm(false)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={() => jarvis.settleConfirm(true)}>
+              Continue
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+  </AlertDialog>
     </div>
   );
 }

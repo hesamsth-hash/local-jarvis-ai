@@ -32,6 +32,7 @@ import {
   extractFileName,
   isTrivialCommand,
   logActivity,
+  memoryPromptBlock,
   stampSeen,
 } from "./memory";
 import type { ChatMessage } from "./types";
@@ -562,7 +563,8 @@ async function runLlmTurn(
       {
         role: "system",
         content:
-          "You are JARVIS, a local personal assistant on the user's machine. Be concise and helpful. You have no tools in this turn.",
+          "You are JARVIS, a local personal assistant on the user's machine. Be concise and helpful. You have no tools in this turn." +
+          memoryPromptBlock(),
       },
       ...ctxLines,
       { role: "user", content: raw },

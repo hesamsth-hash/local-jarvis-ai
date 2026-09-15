@@ -53,6 +53,44 @@ export async function hasRootAccess(): Promise<boolean> {
 }
 
 /**
+ * Re-check root right before a gated command runs. On Android this shells
+ * `su -c id` for a REAL answer (KernelSU/Magisk can revoke or set
+ * session-only grants), so a stale "granted" badge can never mask a missing
+ * grant. Returns ok=false plus a message the user can act on.
+ */
+export async function ensureRootForCommand(): Promise<{
+  ok: boolean;
+  message?: string;
+}> {
+  const t = tauri();
+  if (!t) return { ok: false, message: "This command needs the native app." };
+  if (!isAndroid()) return { ok: true }; // desktop build: no root gating
+  try {
+    const probe = (await t.invoke("execute_command", {
+      command: "su",
+      args: ["id"],
+    })) as { ok: boolean; message: string };
+    if (probe.ok) return { ok: true };
+    // Grant lapsed (KernelSU "until reboot" / session-only / timed out).
+    // Running `su` again is what pops the manager's allow dialog — do it once
+    // here so the user can approve in place instead of hunting the Tools tab.
+    const retry = await requestRootAccess();
+    if (retry.ok) return { ok: true };
+    return {
+      ok: false,
+      message:
+        "Root access isn't active right now for JARVIS. Approve it in the KernelSU/Magisk dialog that just appeared (choose “Until reboot” or “Forever”), or open Tools → “Grant root access”, then try again.",
+    };
+  } catch {
+    return {
+      ok: false,
+      message:
+        "Root check failed — is KernelSU or Magisk installed and JARVIS approved? Tools tab → “Grant root access”.",
+    };
+  }
+}
+
+/**
  * Ask the user's root manager (KernelSU / Magisk) to grant JARVIS superuser
  * access. Running `su` is what makes the manager pop its allow dialog — this
  * triggers exactly that, then reports whether it was approved. Works only in

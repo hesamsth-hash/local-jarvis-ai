@@ -162,11 +162,13 @@ export function ModelSettings({
           <p className="text-xs font-medium">Model</p>
           {models.length > 0 ? (
             <Select
-              value={config.model}
+              // Radix Select breaks on value="" — only bind once a model is
+              // actually picked, otherwise show the placeholder.
+              value={config.model || undefined}
               onValueChange={(v) => onChange({ ...config, model: v })}
             >
               <SelectTrigger className="w-full text-xs">
-                <SelectValue placeholder="Pick a model" />
+                <SelectValue placeholder={models.length ? "Pick a model" : "No models found"} />
               </SelectTrigger>
               <SelectContent>
                 {models.map((m) => (

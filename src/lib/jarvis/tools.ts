@@ -58,7 +58,77 @@ export interface JarvisTool {
   llmDescription: string; // shown to the model
   argHint: string;
   desktopOnly?: boolean;
+  /**
+   * Destructive / system-touching: the executor pauses before running and
+   * asks the user via the confirmation dialog. The question is generated from
+   * the tool + args at execution time — never a scripted line the model must
+   * repeat.
+   */
+  dangerous?: boolean;
   handler?: ToolHandler;
+}
+
+/**
+ * Human-readable description of a dangerous action, built from the actual
+ * tool call. Used as the confirmation-dialog body.
+ */
+export function describeDangerousAction(id: string, arg: string): { title: string; detail: string } {
+  const tool = findTool(id);
+  const name = tool?.name ?? id;
+  const trimmed = arg.trim();
+  switch (id) {
+    case "file_controller":
+      return {
+        title: "File operation",
+        detail: trimmed
+          ? `The model wants to run the file tool with: "${trimmed}". This can rename, move, overwrite or delete files in the connected workspace.`
+          : "The model wants to run a file operation in the connected workspace — it can rename, move, overwrite or delete files.",
+      };
+    case "execute":
+    case "shell":
+      return {
+        title: "Run shell command",
+        detail: trimmed
+          ? `The model wants to execute: ${trimmed}\n\nShell commands run with the app's permissions (root on Android).`
+          : "The model wants to run a shell command on this device.",
+      };
+    case "computer_control":
+      return {
+        title: "Control the computer",
+        detail: trimmed
+          ? `The model wants to control the mouse/keyboard: "${trimmed}". Real clicks and keystrokes will be sent to your apps.`
+          : "The model wants to control your mouse and keyboard — real input will be sent to your apps.",
+      };
+    case "open_app":
+      return {
+        title: "Open application",
+        detail: trimmed
+          ? `The model wants to open: "${trimmed}".`
+          : "The model wants to launch an application on this device.",
+      };
+    case "install_tool":
+      return {
+        title: "Install software",
+        detail: trimmed
+          ? `The model wants to install: "${trimmed}" (via winget on desktop).`
+          : "The model wants to install software on this device.",
+      };
+    case "developer_agent":
+    case "file_processor":
+      return {
+        title: "Bulk file operation",
+        detail: trimmed
+          ? `The model wants to run a bulk operation on your files: "${trimmed}".`
+          : "The model wants to run a bulk operation on your files.",
+      };
+    default:
+      return {
+        title: `Confirm: ${name}`,
+        detail: trimmed
+          ? `The model wants to run "${name}" with: "${trimmed}".`
+          : `The model wants to run "${name}" — this action has system side effects.`,
+      };
+  }
 }
 
 // ---------- web helpers ----------
@@ -991,6 +1061,19 @@ export async function executeTool(
       ok: false,
       data: `"${tool.name}" needs a native desktop bridge — a browser tab can't control the OS at that level.`,
     };
+  }
+  // Dangerous tools pause here and ask the user. The question text is built
+  // from the concrete tool + args (describeDangerousAction), so whatever the
+  // model chose is what gets described — nothing scripted, nothing assumed.
+  if (tool.dangerous && ctx.confirmAction) {
+    const { title, detail } = describeDangerousAction(id, arg);
+    const allowed = await ctx.confirmAction(title, detail).catch(() => false);
+    if (!allowed) {
+      return {
+        ok: false,
+        data: `Cancelled — the user did not approve "${title}". Do not retry the same action; ask the user what they'd like instead.`,
+      };
+    }
   }
   try {
     return await tool.handler(arg, ctx);

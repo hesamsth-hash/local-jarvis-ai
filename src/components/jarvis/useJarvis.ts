@@ -587,6 +587,30 @@ export function useJarvis() {
     ttsEngine.stop();
   }, []);
 
+  // ---------- confirmation gate (dangerous actions) ----------
+  // A real in-app dialog replaces window.confirm — the model's tool call is
+  // described by the gate itself ("About to delete X — continue?"), not a
+  // scripted string the model is supposed to parrot.
+  const [confirmState, setConfirmState] = useState<{
+    open: boolean;
+    title: string;
+    detail: string;
+    resolve: (ok: boolean) => void;
+  } | null>(null);
+
+  const confirmAction = useCallback((title: string, detail: string) => {
+    return new Promise<boolean>((resolve) => {
+      setConfirmState({ open: true, title, detail, resolve });
+    });
+  }, []);
+
+  const settleConfirm = useCallback((ok: boolean) => {
+    setConfirmState((current) => {
+      current?.resolve(ok);
+      return null;
+    });
+  }, []);
+
   // ---------- tool context ----------
   const openExternal = useCallback((url: string) => {
     window.open(url, "_blank", "noopener,noreferrer");
@@ -868,12 +892,9 @@ export function useJarvis() {
       connected: connectedRef.current,
       desktop: isDesktop(),
       llm: llmRef.current,
-      confirmAction: async (title, detail) => {
-        if (typeof window === "undefined") return false;
-        return window.confirm(`${title}\n\n${detail}\n\nThis action requires your approval.`);
-      },
+      confirmAction,
     }),
-    [capture, notify, connectFolder, openExternal],
+    [capture, notify, connectFolder, openExternal, confirmAction],
   );
 
   // ---------- message handling ----------
@@ -894,17 +915,6 @@ export function useJarvis() {
         const llmReady =
           llmRef.current.enabled &&
           (llmStatusRef.current === "online" || probed);
-        // Immediate acknowledgement keeps long local-model/tool operations from
-        // feeling like the microphone stopped listening.
-        if (llmReady || /search|web|weather|read|summar|review|screen|vision|zip|unzip|duplicate|install|open app|code/i.test(text)) {
-          pushMessage({
-            id: uid(),
-            role: "system",
-            content: "On it — I’m working on that now.",
-            createdAt: Date.now(),
-            intent: "task.ack",
-          });
-        }
         // conversation context: last few turns (user + jarvis only)
         const history = messagesRef.current
           .filter(
@@ -1030,12 +1040,17 @@ export function useJarvis() {
       }
       recorderRef.current = await startRecorder(audioInputRef.current);
       setVoiceState("listening");
-    } catch {
+    } catch (e) {
       setVoiceState("offline");
+      const denied =
+        e instanceof DOMException &&
+        (e.name === "NotAllowedError" || e.name === "SecurityError");
       pushMessage({
         id: uid(),
         role: "system",
-        content: "Microphone access was denied. Voice input is unavailable.",
+        content: denied
+          ? "⚠︎ Microphone permission was denied. Open Android Settings → Apps → JARVIS Local Console → Permissions → Microphone → Allow (or tap the mic button again and choose Allow in the pop-up), then try again."
+          : "⚠︎ Couldn't open the microphone — unplug/replug it or pick another input in the Voice tab.",
         createdAt: Date.now(),
       });
     }
@@ -1217,5 +1232,6 @@ export function useJarvis() {
     disabledTools, toggleTool,
     plugins, uninstallPlugin,
     media, closeMedia,
+    confirmState, settleConfirm,
   };
 }
