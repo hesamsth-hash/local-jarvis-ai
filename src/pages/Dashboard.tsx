@@ -27,12 +27,14 @@ import { FileDeck } from "@/components/jarvis/FileDeck";
 import { JarvisOrb } from "@/components/jarvis/JarvisOrb";
 import { MediaViewer } from "@/components/jarvis/MediaViewer";
 import { MemoryPanel } from "@/components/jarvis/MemoryPanel";
+import { SessionBrief } from "@/components/jarvis/SessionBrief";
 import { ModelSettings } from "@/components/jarvis/ModelSettings";
 import { PluginBay } from "@/components/jarvis/PluginBay";
 import { VoiceControls } from "@/components/jarvis/VoiceControls";
 import { useJarvis } from "@/components/jarvis/useJarvis";
 import { usePwaInstall } from "@/hooks/use-pwa-install";
 import { isDesktop, onDesktopStats, type DesktopSystemInfo } from "@/lib/jarvis/desktop-bridge";
+import { recall } from "@/lib/jarvis/memory";
 import { cn } from "@/lib/utils";
 
 export default function Dashboard() {
@@ -214,6 +216,15 @@ export default function Dashboard() {
               className="shrink-0"
             />
           </div>
+
+          <SessionBrief
+            voiceState={jarvis.voiceState}
+            wakeWord={jarvis.wakeWord}
+            handsFree={jarvis.handsFree}
+            workspace={jarvis.rootLabel}
+            memoryCount={recall("", 100).length}
+            onCommand={(command) => void jarvis.process(command, "text")}
+          />
 
           {/* Chat card */}
           <div className="hud-panel flex min-h-[380px] flex-1 flex-col overflow-hidden rounded-md">
