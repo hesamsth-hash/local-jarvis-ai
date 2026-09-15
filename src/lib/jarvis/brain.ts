@@ -90,7 +90,8 @@ Offline (no LLM needed):
 • "bulk rename *.jpg to trip-" — rename all matching files at once
 • "zip <folder|file> into <name>.zip" · "unzip <name>.zip [into folder]" · "hash <file>" — archives + checksums
 • "find duplicates" / "find duplicates *.jpg" — content-hash duplicate scan · "delete duplicates confirm" reclaims the space
-• "continue" — pick up where we left off · "time", "date", "status", "help"
+• "continue" — pick up where we left off · "new chat" — clear the conversation (memory stays)
+• "time", "date", "status", "help"
 
 With a brain connected (keyless cloud by default — or your own Ollama / Kobold / LM Studio) you also get:
 • Web search, weather, YouTube & browser control
@@ -360,6 +361,16 @@ export async function runBrain(
     };
   }
 
+  // "new chat" — clear the visible conversation; memory, tools and settings
+  // stay. Runs BEFORE the LLM tier so it works with any brain state.
+  if (
+    (/^(?:start\s+|begin\s+|let'?s\s+)?(?:a\s+)?new\s+(chat|session|conversation)\b/i.test(text) ||
+      /^(?:clear|reset)\s+(?:the\s+)?(?:chat|conversation|transcript|session)\b/i.test(text)) &&
+    text.length < 50
+  ) {
+    return { reply: "__NEW_CHAT__", intent: "session.reset", ok: true };
+  }
+
   // ---------- LLM + tool registry tier ----------
   // If the brain fails at request time (keyless service busy, Ollama not
   // running, network down), DON'T stop here — keep the error and fall through
@@ -528,8 +539,8 @@ async function runLlmTurn(
   const { toolCtx } = deps;
   const specs = toolsForLlm();
   const ctxLines = (deps.history ?? [])
-    .slice(-10)
-    .map((h) => ({ role: h.role, content: h.content.slice(0, 500) }));
+    .slice(-20)
+    .map((h) => ({ role: h.role, content: h.content.slice(0, 800) }));
 
   // hop 1: which tool? — with keyless auto-failover: if the active preset is
   // dead/busy, silently try the other keyless ones before giving up.

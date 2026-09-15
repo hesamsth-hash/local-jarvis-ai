@@ -8,6 +8,8 @@
 // The LLM gets the most recent ~30 lines injected into its system prompt, so
 // it feels like continuity across sessions without any server.
 
+import type { ChatMessage } from "./types";
+
 const KEY = "jarvis.memory.v1";
 const MAX_ENTRIES = 200;
 
@@ -362,6 +364,58 @@ export function markReminderFired(id: string): void {
 
 export function inMs(mins: number): number {
   return Date.now() + Math.max(1, Math.round(mins)) * 60_000;
+}
+
+// ================= persistent transcript =================
+// The conversation itself is ONE continuous session: every message is saved
+// locally and restored on the next launch, so JARVIS picks up mid-thought
+// instead of starting a new chat each time the app opens. This is separate
+// from memory entries — "new chat" clears only the transcript.
+
+const TRANSCRIPT_KEY = "jarvis.transcript.v1";
+const MAX_TRANSCRIPT = 200;
+
+export function loadTranscript(): ChatMessage[] {
+  try {
+    const raw = localStorage.getItem(TRANSCRIPT_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((m): m is ChatMessage => {
+      const msg = m as Partial<ChatMessage> | null;
+      return (
+        !!msg &&
+        typeof msg.id === "string" &&
+        typeof msg.content === "string" &&
+        typeof msg.createdAt === "number" &&
+        (msg.role === "user" || msg.role === "jarvis" || msg.role === "system")
+      );
+    });
+  } catch {
+    return [];
+  }
+}
+
+export function saveTranscript(messages: ChatMessage[]): void {
+  try {
+    localStorage.setItem(
+      TRANSCRIPT_KEY,
+      JSON.stringify(messages.slice(-MAX_TRANSCRIPT)),
+    );
+  } catch {
+    // storage full/unavailable — the live conversation still works
+  }
+}
+
+/** Wipe the visible conversation (memory entries, tools and settings stay). */
+export function clearTranscript(): number {
+  const n = loadTranscript().length;
+  try {
+    localStorage.removeItem(TRANSCRIPT_KEY);
+  } catch {
+    // ignore
+  }
+  return n;
 }
 
 /** Best-effort file name out of free text (for activity logging). */

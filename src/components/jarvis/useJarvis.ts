@@ -51,12 +51,15 @@ import {
 import { isAndroid, isDesktop } from "@/lib/jarvis/desktop-bridge";
 import {
   addReminder,
+  clearTranscript,
   dueReminders,
   inMs,
+  loadTranscript,
   logActivity,
   markReminderFired,
   pendingReminders,
   resumeSummary,
+  saveTranscript,
   stampSeen,
 } from "@/lib/jarvis/memory";
 import type {
@@ -90,15 +93,21 @@ function loadVoicePrefs(): VoicePrefs {
 }
 
 export function useJarvis() {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: "welcome",
-      role: "jarvis",
-      content:
-        'JARVIS online. Voice engines are loading (cached after the first run) and the keyless brain is live — web search, weather, tools, all working right now. Want 100% offline? Connect Ollama / KoboldCpp in the Brain tab. Say "help" anytime.',
-      createdAt: Date.now(),
-    },
-  ]);
+  // One continuous session: the transcript is loaded from local storage at
+  // boot, so JARVIS resumes the conversation instead of opening a new chat.
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    const saved = loadTranscript();
+    if (saved.length) return saved;
+    return [
+      {
+        id: "welcome",
+        role: "jarvis",
+        content:
+          'JARVIS online. Voice engines are loading (cached after the first run) and the keyless brain is live — web search, weather, tools, all working right now. Want 100% offline? Connect Ollama / KoboldCpp in the Brain tab. Say "help" anytime.',
+        createdAt: Date.now(),
+      },
+    ];
+  });
   const [input, setInput] = useState("");
   const [voiceState, setVoiceState] = useState<VoiceState>("offline");
   const [busy, setBusy] = useState(false);
@@ -217,8 +226,18 @@ export function useJarvis() {
   const commandCount = useQuery(api.jarvis.commandCount);
 
   const pushMessage = useCallback((m: ChatMessage) => {
-    setMessages((prev) => [...prev.slice(-80), m]);
+    setMessages((prev) => {
+      // persist the transcript so the next launch continues THIS conversation
+      saveTranscript([...prev, m].slice(-200));
+      return [...prev.slice(-80), m];
+    });
   }, []);
+
+  // persistence is driven from pushMessage; a safety-net effect covers direct
+  // setMessages calls (clear + reset path below)
+  useEffect(() => {
+    saveTranscript(messages);
+  }, [messages]);
 
   // persist LLM config
   useEffect(() => {
@@ -262,9 +281,17 @@ export function useJarvis() {
   useEffect(() => {
     if (bootGapRef.current === undefined) {
       bootGapRef.current = stampSeen();
+      // Fresh start (no restored transcript)? Then the welcome-back recap adds
+      // context. With a restored conversation the history is already on
+      // screen — only reminders and anything missed while away get posted.
+      const fresh =
+        messagesRef.current.length <= 1 &&
+        messagesRef.current[0]?.id === "welcome";
       const parts: string[] = [];
-      const welcome = resumeSummary(bootGapRef.current ?? undefined);
-      if (welcome) parts.push(welcome);
+      if (fresh) {
+        const welcome = resumeSummary(bootGapRef.current ?? undefined);
+        if (welcome) parts.push(welcome);
+      }
       // anything that came due while the app was closed?
       const due = dueReminders();
       if (due.length) {
@@ -933,17 +960,19 @@ export function useJarvis() {
         const llmReady =
           llmRef.current.enabled &&
           (llmStatusRef.current === "online" || probed);
-        // conversation context: last few turns (user + jarvis only)
+        // conversation context: the restored transcript carries turns from
+        // previous sessions too, so the model continues one ongoing chat.
+        // Truncated per-message to keep the prompt bounded.
         const history = messagesRef.current
           .filter(
             (m) =>
               (m.role === "user" || m.role === "jarvis") &&
               !m.content.startsWith("JARVIS online"),
           )
-          .slice(-10)
+          .slice(-20)
           .map((m) => ({
             role: m.role as "user" | "assistant",
-            content: m.content,
+            content: m.content.slice(0, 800),
           }));
         const result: BrainResult = await runBrain(text, {
           speak,
@@ -999,6 +1028,26 @@ export function useJarvis() {
             return `Switched to the ${target} workspace.`;
           },
         });
+        // "new chat" sentinel: wipe the visible conversation (memory, tools
+        // and settings stay) and greet on the fresh transcript.
+        if (result.reply === "__NEW_CHAT__") {
+          const cleared = clearTranscript();
+          setMessages([
+            {
+              id: uid(),
+              role: "jarvis",
+              content:
+                cleared > 0
+                  ? `Clean slate — cleared ${cleared} message${cleared === 1 ? "" : "s"}. What's next, Sir?`
+                  : "Clean slate. What's next, Sir?",
+              createdAt: Date.now(),
+              intent: "session.reset",
+            },
+          ]);
+          setBusy(false);
+          setVoiceState((s) => (s === "thinking" ? "offline" : s));
+          return;
+        }
         pushMessage({
           id: uid(),
           role: "jarvis",
