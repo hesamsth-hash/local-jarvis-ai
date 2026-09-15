@@ -1,0 +1,3 @@
+# JARVIS Python shell — runtime deps.
+# Keep this minimal: pywebview is the only hard requirement.
+pywebview>=5.0
