@@ -16,7 +16,16 @@ a = Analysis(
     pathex=[os.path.dirname(os.path.abspath(__file__))],
     binaries=[],
     datas=[("../dist", "dist")],
-    hiddenimports=["bridge", "tray", "pystray", "PIL", "psutil"],
+    # bridge.py imports its extras lazily (__import__ by name), so PyInstaller
+    # can't see them — they must be listed here or the exe degrades silently.
+    hiddenimports=[
+        "bridge",
+        "tray",
+        "pystray",
+        "PIL",
+        "psutil",
+        "pyautogui",
+    ],
     hookspath=[],
     runtime_hooks=[],
     excludes=[],

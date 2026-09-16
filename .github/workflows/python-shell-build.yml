@@ -1,0 +1,45 @@
+name: Build Python shell (JARVIS.exe)
+
+# Builds the pywebview Python shell as a one-file Windows exe for every push
+# to main and version tags — same "never need tooling locally" deal as the
+# Tauri installer: push, wait, download the artifact.
+#
+# This is the lightweight desktop build (no Rust): native window, tray icon,
+# autostart, psutil stats, real toasts. It does NOT include media keys or the
+# NSIS installer — those stay with the Tauri build.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch: # also runnable manually from the Actions tab
+
+jobs:
+  build-python-shell:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Build the web UI (bundled into the exe)
+        run: bun install --frozen-lockfile && bun run build
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install shell dependencies
+        run: pip install -r desktop-python/requirements.txt
+
+      - name: Build one-file exe
+        working-directory: desktop-python
+        run: pyinstaller JARVIS.spec --noconfirm
+
+      - name: Upload exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: JARVIS-Windows-Python-Shell
+          path: desktop-python/dist/JARVIS.exe
+          if-no-files-found: error
