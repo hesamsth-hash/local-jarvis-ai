@@ -43,12 +43,53 @@ default browser — the command never dead-ends.
 
 - [x] Native window shell (pywebview, EdgeChromium runtime on Windows)
 - [x] Dev + prod modes, browser fallback, `--check`
-- [ ] Optional native notify (Windows toast) via pywebview's `evaluate_js` bridge
+- [x] **Native bridge (`bridge.py`)** — Python equivalent of the Tauri command
+      set, exposed via `window.pywebview.api`:
+      - `execute_command` (shell with output), `launch_app`, `open_url`
+      - `system_info` via psutil (real CPU/RAM/uptime/GPU), `screen_metrics`
+      - `desktop_picture` via Pillow (screenshots for Desktop Control / See & Act)
+      - `notify` — real Windows toasts (PowerShell), osascript on macOS,
+        notify-send on Linux
+      - `mouse_*` / `key_press` / `type_text` via pyautogui
+      Every method degrades gracefully when an extra is missing — the console
+      shows its browser fallback or an honest "pip install X" hint instead of
+      failing.
+- [x] Console auto-detects the Python backend (Tauri keeps priority; plain
+      browser/PWA unaffected)
+- [ ] One-file `.exe` via PyInstaller
 - [ ] Optional tray icon / autostart
-- [ ] Optional sidecar: faster-whisper STT served on localhost for the console
+- [ ] Optional sidecar: faster-whisper STT served on localhost
+
+## Bridge extras
+
+```bash
+.venv\Scripts\pip install psutil Pillow pyautogui
+```
+
+| Extra | Unlocks |
+|---|---|
+| psutil | System Monitor with real CPU/RAM/uptime + GPU names |
+| Pillow | Desktop screenshots → Desktop Control tool, See & Act vision |
+| pyautogui | Computer Control (move/click/scroll/type) + See & Act actions |
+
+## Build a one-file .exe (Windows)
+
+```bash
+.venv\Scripts\pip install pyinstaller
+bun run build
+.venv\Scripts\pyinstaller --name JARVIS --onefile --windowed ^
+  --add-data "../dist;dist" main.py
+# → desktop-python/dist/JARVIS.exe
+```
+
+`main.py` already prefers the bundled `dist/` UI when it exists, so the exe
+is self-contained.
 
 ## Cancel-anytime story
 
-- The web app (`src/`) is untouched — PWA and Android build keep working.
+- The web app (`src/`) is untouched — PWA and Android build keep working. The
+  only `src/` change is additive: `desktop-bridge.ts` now *also* checks for the
+  Python backend (after Tauri), which is inert everywhere else.
 - Delete `desktop-python/` and you're back to the pure web app with zero residue.
-- The sidecar idea can be added later independently; nothing here depends on it.
+- New tools keep landing in BOTH builds automatically — they call the same
+  `desktop-bridge.ts` functions, which now route to Tauri OR the Python shell.

@@ -20,6 +20,63 @@ function tauri(): { invoke: TauriInvoke; event?: TauriEvent } | null {
   return { invoke: internals.invoke, event: w.__TAURI__?.event };
 }
 
+// ---------------- Python shell backend (pywebview) ----------------
+// desktop-python/main.py hosts this same console in a native window and
+// exposes a Python js_api with the same command surface as the Rust bridge.
+// It is detected AFTER Tauri: the APK/desktop exe keep priority, and the
+// plain browser/PWA never sees it.
+
+interface PyBridge {
+  [method: string]: (...args: unknown[]) => Promise<unknown>;
+}
+
+function pywebview(): PyBridge | null {
+  const w = window as unknown as { pywebview?: { api?: PyBridge } };
+  return w.pywebview?.api ?? null;
+}
+
+/** Resolves once the Python shell's js_api is ready (or 2.5s pass). */
+function pywebviewReady(): Promise<PyBridge | null> {
+  const w = window as unknown as {
+    pywebview?: { api?: PyBridge };
+  };
+  if (w.pywebview?.api) return Promise.resolve(w.pywebview.api);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), 2500);
+    window.addEventListener(
+      "pywebviewready",
+      () => {
+        clearTimeout(timer);
+        resolve(w.pywebview?.api ?? null);
+      },
+      { once: true },
+    );
+  });
+}
+
+let pyReadyCache: PyBridge | null | undefined;
+
+async function py(): Promise<PyBridge | null> {
+  if (pyReadyCache !== undefined) return pyReadyCache;
+  pyReadyCache = (await pywebviewReady()) ?? null;
+  return pyReadyCache;
+}
+
+/**
+ * Run the same call against the Python shell's js_api when it's present.
+ * Returns null when there is no Python backend (caller falls back).
+ */
+async function pyCall<T>(method: string, ...args: unknown[]): Promise<T | null> {
+  const api = await py();
+  if (!api || typeof api[method] !== "function") return null;
+  try {
+    return (await api[method](...args)) as T;
+  } catch (e) {
+    if (e instanceof Error) throw e;
+    return null;
+  }
+}
+
 let androidCache: boolean | null = null;
 
 /** True when running inside the native Android (APK) build. */
@@ -33,7 +90,11 @@ export function isAndroid(): boolean {
 }
 
 export function isDesktop(): boolean {
-  return tauri() !== null;
+  // Tauri first (APK / Windows exe); the Python shell counts too once its
+  // js_api is up (pywebview sets window.pywebview.api synchronously on ready).
+  if (tauri() !== null) return true;
+  const w = window as unknown as { pywebview?: { api?: unknown } };
+  return w.pywebview?.api != null;
 }
 
 /**
@@ -131,12 +192,16 @@ export interface DesktopSystemInfo {
 
 export async function desktopSystemInfo(): Promise<DesktopSystemInfo | null> {
   const t = tauri();
-  if (!t) return null;
-  try {
-    return (await t.invoke("system_info")) as DesktopSystemInfo;
-  } catch {
-    return null;
+  if (t) {
+    try {
+      return (await t.invoke("system_info")) as DesktopSystemInfo;
+    } catch {
+      return null;
+    }
   }
+  // Python shell: psutil-backed readout (None without the extra — the caller
+  // then shows its own browser-level stats).
+  return pyCall<DesktopSystemInfo>("system_info");
 }
 
 // ---------------- input ----------------
@@ -147,12 +212,14 @@ export async function desktopMouseMove(
   relative = false,
 ): Promise<string | null> {
   const t = tauri();
-  if (!t) return null;
-  try {
-    return (await t.invoke("mouse_move", { x, y, relative })) as string;
-  } catch (e) {
-    return e instanceof Error ? `Mouse move failed: ${e.message}` : "Mouse move failed.";
+  if (t) {
+    try {
+      return (await t.invoke("mouse_move", { x, y, relative })) as string;
+    } catch (e) {
+      return e instanceof Error ? `Mouse move failed: ${e.message}` : "Mouse move failed.";
+    }
   }
+  return pyCall<string>("mouse_move", x, y, relative);
 }
 
 export async function desktopMouseClick(
@@ -160,32 +227,38 @@ export async function desktopMouseClick(
   kind: "click" | "down" | "up" = "click",
 ): Promise<string | null> {
   const t = tauri();
-  if (!t) return null;
-  try {
-    return (await t.invoke("mouse_click", { button, kind })) as string;
-  } catch (e) {
-    return e instanceof Error ? `Click failed: ${e.message}` : "Click failed.";
+  if (t) {
+    try {
+      return (await t.invoke("mouse_click", { button, kind })) as string;
+    } catch (e) {
+      return e instanceof Error ? `Click failed: ${e.message}` : "Click failed.";
+    }
   }
+  return pyCall<string>("mouse_click", button, kind);
 }
 
 export async function desktopMouseDoubleClick(): Promise<string | null> {
   const t = tauri();
-  if (!t) return null;
-  try {
-    return (await t.invoke("mouse_double_click")) as string;
-  } catch (e) {
-    return e instanceof Error ? `Double-click failed: ${e.message}` : "Double-click failed.";
+  if (t) {
+    try {
+      return (await t.invoke("mouse_double_click")) as string;
+    } catch (e) {
+      return e instanceof Error ? `Double-click failed: ${e.message}` : "Double-click failed.";
+    }
   }
+  return pyCall<string>("mouse_double_click");
 }
 
 export async function desktopMouseScroll(amount: number): Promise<string | null> {
   const t = tauri();
-  if (!t) return null;
-  try {
-    return (await t.invoke("mouse_scroll", { amount })) as string;
-  } catch (e) {
-    return e instanceof Error ? `Scroll failed: ${e.message}` : "Scroll failed.";
+  if (t) {
+    try {
+      return (await t.invoke("mouse_scroll", { amount })) as string;
+    } catch (e) {
+      return e instanceof Error ? `Scroll failed: ${e.message}` : "Scroll failed.";
+    }
   }
+  return pyCall<string>("mouse_scroll", amount);
 }
 
 export async function desktopMouseDrag(
@@ -196,46 +269,54 @@ export async function desktopMouseDrag(
   steps?: number,
 ): Promise<string | null> {
   const t = tauri();
-  if (!t) return null;
-  try {
-    return (await t.invoke("mouse_drag", { fromX, fromY, toX, toY, steps })) as string;
-  } catch (e) {
-    return e instanceof Error ? `Drag failed: ${e.message}` : "Drag failed.";
+  if (t) {
+    try {
+      return (await t.invoke("mouse_drag", { fromX, fromY, toX, toY, steps })) as string;
+    } catch (e) {
+      return e instanceof Error ? `Drag failed: ${e.message}` : "Drag failed.";
+    }
   }
+  return pyCall<string>("mouse_drag", fromX, fromY, toX, toY, steps);
 }
 
 export async function desktopMouseDraw(
   points: { x: number; y: number }[],
 ): Promise<string | null> {
   const t = tauri();
-  if (!t) return null;
-  try {
-    return (await t.invoke("mouse_draw", {
-      points: points.map((p) => [p.x, p.y]),
-    })) as string;
-  } catch (e) {
-    return e instanceof Error ? `Draw failed: ${e.message}` : "Draw failed.";
+  if (t) {
+    try {
+      return (await t.invoke("mouse_draw", {
+        points: points.map((p) => [p.x, p.y]),
+      })) as string;
+    } catch (e) {
+      return e instanceof Error ? `Draw failed: ${e.message}` : "Draw failed.";
+    }
   }
+  return pyCall<string>("mouse_draw", points.map((p) => [p.x, p.y]));
 }
 
 export async function desktopKeyPress(key: string): Promise<string | null> {
   const t = tauri();
-  if (!t) return null;
-  try {
-    return (await t.invoke("key_press", { key })) as string;
-  } catch (e) {
-    return e instanceof Error ? `Key failed: ${e.message}` : "Key failed.";
+  if (t) {
+    try {
+      return (await t.invoke("key_press", { key })) as string;
+    } catch (e) {
+      return e instanceof Error ? `Key failed: ${e.message}` : "Key failed.";
+    }
   }
+  return pyCall<string>("key_press", key);
 }
 
 export async function desktopTypeText(text: string): Promise<string | null> {
   const t = tauri();
-  if (!t) return null;
-  try {
-    return (await t.invoke("type_text", { text })) as string;
-  } catch (e) {
-    return e instanceof Error ? `Typing failed: ${e.message}` : "Typing failed.";
+  if (t) {
+    try {
+      return (await t.invoke("type_text", { text })) as string;
+    } catch (e) {
+      return e instanceof Error ? `Typing failed: ${e.message}` : "Typing failed.";
+    }
   }
+  return pyCall<string>("type_text", text);
 }
 
 // ---------------- capture ----------------
@@ -248,12 +329,14 @@ export interface DesktopScreenshot {
 
 export async function desktopPicture(): Promise<DesktopScreenshot | null> {
   const t = tauri();
-  if (!t) return null;
-  try {
-    return (await t.invoke("desktop_picture")) as DesktopScreenshot;
-  } catch {
-    return null;
+  if (t) {
+    try {
+      return (await t.invoke("desktop_picture")) as DesktopScreenshot;
+    } catch {
+      return null;
+    }
   }
+  return pyCall<DesktopScreenshot>("desktop_picture");
 }
 
 /** Display size in the same coordinate space the mouse commands use. */
@@ -264,28 +347,33 @@ export interface DesktopScreenMetrics {
 
 export async function desktopScreenMetrics(): Promise<DesktopScreenMetrics | null> {
   const t = tauri();
-  if (!t) return null;
-  try {
-    return (await t.invoke("screen_metrics")) as DesktopScreenMetrics;
-  } catch {
-    return null;
+  if (t) {
+    try {
+      return (await t.invoke("screen_metrics")) as DesktopScreenMetrics;
+    } catch {
+      return null;
+    }
   }
+  return pyCall<DesktopScreenMetrics>("screen_metrics");
 }
 
 // ---------------- apps / urls / notifications ----------------
 
 export async function desktopLaunchApp(name: string): Promise<string | null> {
   const t = tauri();
-  if (!t) return null;
-  try {
-    const res = (await t.invoke("launch_app", { name })) as {
-      ok: boolean;
-      message: string;
-    };
-    return res.message;
-  } catch {
-    return null;
+  if (t) {
+    try {
+      const res = (await t.invoke("launch_app", { name })) as {
+        ok: boolean;
+        message: string;
+      };
+      return res.message;
+    } catch {
+      return null;
+    }
   }
+  const r = await pyCall<{ ok: boolean; message: string }>("launch_app", name);
+  return r ? r.message : null;
 }
 
 /**
@@ -306,43 +394,50 @@ export async function desktopExecuteRaw(
   args: string[] = [],
 ): Promise<{ ok: boolean; message: string } | null> {
   const t = tauri();
-  if (!t) return null;
-  try {
-    return (await t.invoke("execute_command", { command, args })) as {
-      ok: boolean;
-      message: string;
-    };
-  } catch (e) {
-    return {
-      ok: false,
-      message: e instanceof Error ? e.message : "Execute failed.",
-    };
+  if (t) {
+    try {
+      return (await t.invoke("execute_command", { command, args })) as {
+        ok: boolean;
+        message: string;
+      };
+    } catch (e) {
+      return {
+        ok: false,
+        message: e instanceof Error ? e.message : "Execute failed.",
+      };
+    }
   }
+  return pyCall<{ ok: boolean; message: string }>("execute_command", command, args);
 }
 
 export async function desktopOpenUrl(url: string): Promise<string | null> {
   const t = tauri();
-  if (!t) return null;
-  try {
-    const res = (await t.invoke("open_url", { url })) as {
-      ok: boolean;
-      message: string;
-    };
-    return res.message;
-  } catch {
-    return null;
+  if (t) {
+    try {
+      const res = (await t.invoke("open_url", { url })) as {
+        ok: boolean;
+        message: string;
+      };
+      return res.message;
+    } catch {
+      return null;
+    }
   }
+  const r = await pyCall<{ ok: boolean; message: string }>("open_url", url);
+  return r ? r.message : null;
 }
 
 export async function desktopNotify(title: string, body: string): Promise<boolean> {
   const t = tauri();
-  if (!t) return false;
-  try {
-    await t.invoke("notify", { title, body });
-    return true;
-  } catch {
-    return false;
+  if (t) {
+    try {
+      await t.invoke("notify", { title, body });
+      return true;
+    } catch {
+      return false;
+    }
   }
+  return (await pyCall<boolean>("notify", title, body)) === true;
 }
 
 // ---------------- live stats ----------------

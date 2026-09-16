@@ -1,3 +1,10 @@
 # JARVIS Python shell — runtime deps.
 # Keep this minimal: pywebview is the only hard requirement.
+#
+# The shell still RUNS with only pywebview (every bridge call degrades
+# gracefully), but these unlock the native powers:
 pywebview>=5.0
+psutil>=5.9          # real CPU/RAM/uptime for System Monitor
+Pillow>=10.0         # desktop screenshots (Desktop Control / See & Act)
+pyautogui>=0.9.54    # mouse + keyboard control (Computer Control / See & Act)
+pyinstaller>=6.0 ; sys_platform == 'win32'   # one-file .exe build (Windows only)

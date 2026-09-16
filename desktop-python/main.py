@@ -30,6 +30,8 @@ import webbrowser
 from pathlib import Path
 from urllib.request import urlopen
 
+from bridge import JARVISApi
+
 APP_TITLE = "JARVIS — Local Voice Console"
 WINDOW_SIZE = (1280, 860)
 MIN_SIZE = (900, 640)
@@ -108,6 +110,7 @@ def run(args: argparse.Namespace) -> int:
         height=WINDOW_SIZE[1],
         min_size=MIN_SIZE,
         background_color="#050a14",
+        js_api=JARVISApi(),
     )
 
     def on_loaded():
