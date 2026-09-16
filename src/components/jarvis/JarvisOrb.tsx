@@ -1,11 +1,14 @@
 import { motion } from "framer-motion";
 import { Mic, MicOff } from "lucide-react";
 import type { VoiceState } from "@/lib/jarvis/types";
+import { CommandHud } from "@/components/jarvis/CommandHud";
 import { cn } from "@/lib/utils";
 
 interface JarvisOrbProps {
   state: VoiceState;
   enginesReady: boolean;
+  /** Live desktop CPU load 0–100, streamed by the native bridge (optional). */
+  load?: number | null;
   onToggleListen?: () => void;
   className?: string;
 }
@@ -24,9 +27,17 @@ const STATE_HINT: Record<VoiceState, string> = {
   speaking: "Voice output in progress",
 };
 
+/**
+ * The reactor core — now a 3D gimbal reactor, not a flat 2D disc:
+ *  - perspective stage with three counter-rotating tilted coil plates,
+ *  - a yawing equator ring for real depth wobble,
+ *  - a Mark-LVII command HUD ring around the whole assembly,
+ *  - hot red ONLY while the mic is live; thinking/speaking stay reactor cyan.
+ */
 export function JarvisOrb({
   state,
   enginesReady,
+  load = null,
   onToggleListen,
   className,
 }: JarvisOrbProps) {
@@ -35,50 +46,64 @@ export function JarvisOrb({
   const thinking = state === "thinking";
 
   return (
-    <div className={cn("flex flex-col items-center gap-4", className)}>
-      <div className="relative size-44 sm:size-52">
-        {/* HUD tick ring */}
+    <div className={cn("orb-state-hue flex flex-col items-center gap-4", className)} data-voice={state}>
+      <div className="orb-stage relative size-44 sm:size-52">
+        {/* halo — hue follows the state (red only when listening) */}
+        <motion.div
+          className="absolute -inset-6 rounded-full bg-primary/25 blur-2xl"
+          style={{
+            background: listening
+              ? "radial-gradient(circle, oklch(0.64 0.21 12 / 0.5) 0%, transparent 70%)"
+              : undefined,
+          }}
+          animate={{
+            opacity: listening ? [0.45, 0.8, 0.45] : 0.22,
+            scale: listening ? [0.92, 1.1, 0.92] : 1,
+          }}
+          transition={{
+            duration: listening ? 1.1 : 4,
+            repeat: listening ? Infinity : 0,
+            ease: "easeInOut",
+          }}
+        />
+
+        {/* Mark-LVII command HUD ring */}
+        <CommandHud state={state} load={load} />
+
+        {/* HUD tick ring (outer, slow) */}
         <svg
           viewBox="0 0 200 200"
-          className="orb-ring-slow absolute inset-0 size-full"
+          className="orb-ring-slow absolute inset-2 size-[94%]"
           aria-hidden
         >
           <circle
-            cx="100"
-            cy="100"
-            r="97"
-            fill="none"
+            cx="100" cy="100" r="97" fill="none"
             stroke="currentColor"
             strokeWidth="1"
             strokeDasharray="2 7"
             className="text-primary/45"
           />
         </svg>
-        {/* HUD arc segments — three thick, fast arcs */}
+
+        {/* HUD arc segments — three fast arcs */}
         <svg
           viewBox="0 0 200 200"
-          className="orb-ring-reverse absolute inset-0 size-full"
+          className="orb-ring-reverse absolute inset-2 size-[94%]"
           aria-hidden
         >
           <circle
-            cx="100"
-            cy="100"
-            r="88"
-            fill="none"
+            cx="100" cy="100" r="88" fill="none"
             stroke="currentColor"
             strokeWidth="5"
             strokeLinecap="round"
             strokeDasharray="120 432"
             className={cn(
               "text-primary/70 transition-colors",
-              listening && "text-primary",
+              listening && "text-red-400/80",
             )}
           />
           <circle
-            cx="100"
-            cy="100"
-            r="88"
-            fill="none"
+            cx="100" cy="100" r="88" fill="none"
             stroke="currentColor"
             strokeWidth="3"
             strokeLinecap="round"
@@ -86,14 +111,11 @@ export function JarvisOrb({
             transform="rotate(150 100 100)"
             className={cn(
               "text-primary/45 transition-colors",
-              listening && "text-primary/80",
+              listening && "text-red-400/60",
             )}
           />
           <circle
-            cx="100"
-            cy="100"
-            r="80"
-            fill="none"
+            cx="100" cy="100" r="80" fill="none"
             stroke="currentColor"
             strokeWidth="2"
             strokeLinecap="round"
@@ -103,32 +125,15 @@ export function JarvisOrb({
           />
         </svg>
 
-        {/* halo */}
-        <motion.div
-          className={cn(
-            "absolute -inset-6 rounded-full",
-            listening ? "bg-primary/25 blur-2xl" : "bg-primary/10 blur-2xl",
-          )}
-          animate={{
-            opacity: listening ? [0.4, 0.75, 0.4] : 0.22,
-            scale: listening ? [0.9, 1.08, 0.9] : 1,
-          }}
-          transition={{
-            duration: listening ? 1.1 : 4,
-            repeat: listening ? Infinity : 0,
-            ease: "easeInOut",
-          }}
-        />
-
-        {/* core */}
+        {/* core — 3D gimbal reactor */}
         <button
           type="button"
           aria-label="Toggle voice listening"
           onClick={onToggleListen}
-          className="absolute inset-5 flex items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="absolute inset-6 flex items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <motion.div
-            className="orb-core relative flex size-full items-center justify-center rounded-full"
+            className="orb-gimbal relative size-full"
             animate={{
               scale: thinking
                 ? [1, 1.04, 1]
@@ -144,51 +149,93 @@ export function JarvisOrb({
               ease: "easeInOut",
             }}
           >
-            {/* reactor coils + spokes — movie-style */}
+            {/* glowing core ball */}
+            <div className="orb-core absolute inset-2 rounded-full" />
+
+            {/* 3D gimbal plates — three tilted coil rings counter-rotating */}
+            <svg
+              viewBox="0 0 100 100"
+              className="orb-gimbal-a absolute inset-0 size-full"
+              aria-hidden
+            >
+              <circle
+                cx="50" cy="50" r="47" fill="none"
+                stroke="white"
+                strokeWidth="1.6"
+                strokeDasharray="4 8"
+                opacity="0.5"
+              />
+            </svg>
+            <svg
+              viewBox="0 0 100 100"
+              className="orb-gimbal-b absolute inset-1 size-[92%]"
+              aria-hidden
+            >
+              <circle
+                cx="50" cy="50" r="47" fill="none"
+                stroke="white"
+                strokeWidth="1.2"
+                strokeDasharray="2 9"
+                opacity="0.4"
+              />
+            </svg>
+            <svg
+              viewBox="0 0 100 100"
+              className="orb-gimbal-c absolute inset-3 size-[82%]"
+              aria-hidden
+            >
+              <circle
+                cx="50" cy="50" r="47" fill="none"
+                stroke="white"
+                strokeWidth="0.9"
+                strokeDasharray="1.5 10"
+                opacity="0.3"
+              />
+            </svg>
+
+            {/* yawing equator ring — real depth wobble */}
+            <svg
+              viewBox="0 0 100 100"
+              className="orb-gimbal-yaw absolute inset-4 size-[75%]"
+              aria-hidden
+            >
+              <circle
+                cx="50" cy="50" r="48" fill="none"
+                stroke="white"
+                strokeWidth="1.4"
+                opacity="0.45"
+              />
+            </svg>
+
+            {/* hot plasma center + copper spokes (static, on the ball itself) */}
             <svg
               viewBox="0 0 100 100"
               className="absolute inset-0 size-full"
               aria-hidden
             >
-              {/* concentric coils */}
-              {[34, 41, 47].map((r) => (
-                <circle
-                  key={r}
-                  cx="50"
-                  cy="50"
-                  r={r}
-                  fill="none"
-                  stroke="white"
-                  strokeWidth={r === 41 ? "1.2" : "0.8"}
-                  strokeDasharray={r === 41 ? "3 9" : "1.5 7"}
-                  opacity={r === 47 ? 0.35 : 0.55}
-                />
-              ))}
-              {/* radial spokes (the copper winding look) */}
               {Array.from({ length: 10 }, (_, i) => {
                 const a = (i * 36 * Math.PI) / 180;
                 return (
                   <line
                     key={i}
-                    x1={50 + 30 * Math.cos(a)}
-                    y1={50 + 30 * Math.sin(a)}
-                    x2={50 + 46 * Math.cos(a)}
-                    y2={50 + 46 * Math.sin(a)}
+                    x1={50 + 18 * Math.cos(a)}
+                    y1={50 + 18 * Math.sin(a)}
+                    x2={50 + 30 * Math.cos(a)}
+                    y2={50 + 30 * Math.sin(a)}
                     stroke="white"
-                    strokeWidth="1.6"
+                    strokeWidth="1.2"
                     strokeLinecap="round"
-                    opacity="0.4"
+                    opacity="0.35"
                   />
                 );
               })}
-              {/* hot core glow */}
-              <circle cx="50" cy="50" r="17" fill="white" opacity="0.25" />
-              <circle cx="42" cy="42" r="5" fill="white" opacity="0.7" />
+              <circle cx="50" cy="50" r="12" fill="white" opacity="0.28" />
+              <circle cx="45" cy="45" r="4" fill="white" opacity="0.75" />
             </svg>
 
             {/* equalizer bars when speaking */}
             {speaking && (
-              <div className="flex items-center gap-1.5">
+              <div className="relative flex items-center justify-center gap-1.5">
                 {[0, 1, 2, 3, 4].map((i) => (
                   <span
                     key={i}
@@ -205,7 +252,7 @@ export function JarvisOrb({
             {!speaking && (
               <span
                 className={cn(
-                  "flex size-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur-sm transition-colors",
+                  "relative flex size-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur-sm transition-colors",
                   listening && "bg-white/25",
                 )}
               >
@@ -224,10 +271,11 @@ export function JarvisOrb({
         <span
           className={cn(
             "font-mono text-[11px] uppercase tracking-[0.3em]",
-            listening ? "text-primary text-glow" : "text-muted-foreground",
+            listening ? "text-red-400" : "text-primary text-glow",
           )}
         >
           {STATE_LABEL[state]}
+          {listening && " · mic live"}
         </span>
         <span className="text-xs text-muted-foreground/80">
           {enginesReady ? STATE_HINT[state] : "Loading local engines…"}

@@ -213,6 +213,7 @@ export default function Dashboard() {
               enginesReady={
                 jarvis.engines.tts === "ready" || jarvis.engines.stt === "ready"
               }
+              load={sysInfo ? sysInfo.cpu_usage_percent : null}
               onToggleListen={jarvis.toggleListening}
               className="shrink-0"
             />

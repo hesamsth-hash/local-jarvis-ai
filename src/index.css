@@ -303,6 +303,23 @@ samp {
   }
 }
 
+/* ---------- Mark-LVII state hues ----------
+   The orb is cyan by default; it only turns RED while the microphone is
+   actively capturing (listening). Thinking/speaking stay bright cyan —
+   JARVIS never flashes red when she answers or talks. */
+.orb-state-hue {
+  --orb-hue: var(--accent-h); /* standby/thinking/speaking: accent cyan */
+}
+.orb-state-hue[data-voice="listening"] {
+  --orb-hue: 12; /* hot alert red — mic open */
+}
+.orb-state-hue[data-voice="thinking"] {
+  --orb-hue: var(--accent-h);
+}
+.orb-state-hue[data-voice="speaking"] {
+  --orb-hue: var(--accent-h);
+}
+
 /* ---------- Arc reactor (JARVIS core) — accent-driven ---------- */
 .orb-core {
   background: radial-gradient(
@@ -313,10 +330,86 @@ samp {
     oklch(0.42 0.1 var(--accent-h) / 0.95) 100%
   );
   box-shadow:
-    0 0 34px color-mix(in oklch, var(--primary) 60%, transparent),
-    0 0 90px color-mix(in oklch, var(--primary) 30%, transparent),
-    0 0 160px color-mix(in oklch, var(--primary) 15%, transparent),
+    0 0 34px oklch(0.83 0.115 var(--orb-hue, var(--accent-h)) / 0.6),
+    0 0 90px oklch(0.83 0.115 var(--orb-hue, var(--accent-h)) / 0.3),
+    0 0 160px oklch(0.83 0.115 var(--orb-hue, var(--accent-h)) / 0.15),
     inset 0 0 34px oklch(0.98 0.02 var(--accent-h) / 0.4);
+}
+
+/* 3D gimbal stage — perspective container for the reactor layers */
+.orb-stage {
+  perspective: 900px;
+  perspective-origin: 50% 50%;
+}
+.orb-gimbal {
+  transform-style: preserve-3d;
+}
+/* inner coil ring: tilted plate, slow counter-spin — the copper-winding disk */
+@keyframes gimbal-tilt-spin {
+  0% {
+    transform: rotateX(64deg) rotateZ(0deg);
+  }
+  100% {
+    transform: rotateX(64deg) rotateZ(-360deg);
+  }
+}
+.orb-gimbal-a {
+  animation: gimbal-tilt-spin 9s linear infinite;
+  transform-style: preserve-3d;
+}
+.orb-gimbal-b {
+  animation: gimbal-tilt-spin 14s linear infinite reverse;
+  transform-style: preserve-3d;
+}
+.orb-gimbal-c {
+  animation: gimbal-tilt-spin 22s linear infinite;
+  transform-style: preserve-3d;
+}
+/* vertical equator ring seen edge-on, rotating around Y for depth wobble */
+@keyframes gimbal-yaw {
+  0% {
+    transform: rotateY(0deg) rotateX(78deg);
+  }
+  100% {
+    transform: rotateY(360deg) rotateX(78deg);
+  }
+}
+.orb-gimbal-yaw {
+  animation: gimbal-yaw 17s linear infinite;
+  transform-style: preserve-3d;
+}
+.perf-lite .orb-gimbal-a,
+.perf-lite .orb-gimbal-b,
+.perf-lite .orb-gimbal-c,
+.perf-lite .orb-gimbal-yaw {
+  animation: none;
+}
+
+/* ---------- Command HUD (Mark-LVII ring) ---------- */
+.hud-cmd-ring {
+  animation: spin-slow 26s linear infinite;
+  transform-origin: center;
+}
+.hud-cmd-ring-rev {
+  animation: spin-slow 38s linear infinite reverse;
+  transform-origin: center;
+}
+.hud-cmd-blink {
+  animation: hud-blink 1.6s ease-in-out infinite;
+}
+@keyframes hud-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.perf-lite .hud-cmd-ring,
+.perf-lite .hud-cmd-ring-rev,
+.perf-lite .hud-cmd-blink {
+  animation: none;
 }
 
 /* Rotating arc segments (SVG ring, conic gradients are blurry when animated) */
@@ -464,6 +557,13 @@ samp {
   .orb-pulse,
   .orb-ring-slow,
   .orb-ring-reverse,
+  .orb-gimbal-a,
+  .orb-gimbal-b,
+  .orb-gimbal-c,
+  .orb-gimbal-yaw,
+  .hud-cmd-ring,
+  .hud-cmd-ring-rev,
+  .hud-cmd-blink,
   .eq-bar,
   .wave-bar,
   .aurora::before,
