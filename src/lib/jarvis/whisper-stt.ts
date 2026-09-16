@@ -1,8 +1,13 @@
 // Whisper STT engine — speech recognition running locally via transformers.js.
 // The library and model are lazy-loaded on demand.
+//
+// Upgrade path: when the Python sidecar (desktop-python/sidecar.py) is
+// running on this machine, transcription goes to its faster-whisper instead
+// (better accuracy, less RAM) and silently falls back here if it errors.
 
 import type { AutomaticSpeechRecognitionPipeline } from "@huggingface/transformers";
 import type { LoadedProgress } from "./types";
+import { encodeWav, sidecarAvailable, sidecarTranscribe } from "./sidecar-stt";
 
 const MODEL_ID = "onnx-community/whisper-base";
 
@@ -50,7 +55,16 @@ class SttEngine {
     return this.loading;
   }
 
-  async transcribe(audio: Float32Array): Promise<string> {
+  async transcribe(audio: Float32Array, sampleRate = 16000): Promise<string> {
+    // Sidecar first (faster-whisper on localhost) — fall back to in-browser.
+    if (await sidecarAvailable()) {
+      try {
+        const text = await sidecarTranscribe(encodeWav(audio, sampleRate));
+        if (text) return text;
+      } catch {
+        // sidecar hiccup — use the local engine below
+      }
+    }
     if (!this.asr) throw new Error("STT engine not loaded");
     const out = await this.asr(audio, { chunk_length_s: 30, stride_length_s: 5 });
     const text = (out as { text?: string }).text ?? "";

@@ -31,6 +31,7 @@ import subprocess
 import sys
 import time
 import webbrowser
+from pathlib import Path
 from typing import Any
 
 IS_WINDOWS = sys.platform == "win32"
@@ -54,6 +55,60 @@ class JARVISApi:
 
     def ping(self) -> dict[str, Any]:
         return {"ok": True, "bridge": "python", "platform": sys.platform}
+
+    # ---------- autostart (Windows registry, Run key) ----------
+
+    RUN_KEY = r"Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+    VALUE_NAME = "JARVISLocalConsole"
+
+    def autostart_enabled(self) -> bool:
+        if not IS_WINDOWS:
+            return False
+        try:
+            import winreg  # type: ignore[import-not-found]
+
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, self.RUN_KEY) as k:
+                winreg.QueryValueEx(k, self.VALUE_NAME)
+                return True
+        except FileNotFoundError:
+            return False
+        except OSError:
+            return False
+
+    def set_autostart(self, enable: bool, exe_path: str | None = None) -> dict[str, Any]:
+        """Toggle Start-with-Windows. When frozen (PyInstaller exe) registers
+        the exe itself; otherwise registers a `pythonw main.py` command so it
+        still works from source. Non-Windows platforms answer honestly."""
+        if not IS_WINDOWS:
+            return {
+                "ok": False,
+                "enabled": False,
+                "message": "Start-with-Windows is a Windows feature.",
+            }
+        try:
+            import winreg  # type: ignore[import-not-found]
+
+            if enable:
+                if exe_path:
+                    command = f'"{exe_path}"'
+                elif getattr(sys, "frozen", False):
+                    command = f'"{sys.executable}"'
+                else:
+                    main_py = Path(__file__).resolve()
+                    command = f'"{sys.executable}" "{main_py}"'
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, self.RUN_KEY) as k:
+                    winreg.SetValueEx(k, self.VALUE_NAME, 0, winreg.REG_SZ, command)
+                return {"ok": True, "enabled": True, "message": "JARVIS will start with Windows."}
+            try:
+                with winreg.OpenKey(
+                    winreg.HKEY_CURRENT_USER, self.RUN_KEY, 0, winreg.KEY_SET_VALUE
+                ) as k:
+                    winreg.DeleteValue(k, self.VALUE_NAME)
+                return {"ok": True, "enabled": False, "message": "Autostart disabled."}
+            except FileNotFoundError:
+                return {"ok": True, "enabled": False, "message": "Autostart was already off."}
+        except OSError as exc:
+            return {"ok": False, "enabled": self.autostart_enabled(), "message": f"Registry update failed: {exc}"}
 
     # ---------- shell ----------
 

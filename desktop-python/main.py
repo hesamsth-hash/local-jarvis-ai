@@ -31,6 +31,7 @@ from pathlib import Path
 from urllib.request import urlopen
 
 from bridge import JARVISApi
+from tray import start_tray
 
 APP_TITLE = "JARVIS — Local Voice Console"
 WINDOW_SIZE = (1280, 860)
@@ -54,6 +55,16 @@ def resolve_target(args: argparse.Namespace) -> str | None:
         return args.url
     if args.dev:
         return DEV_URL
+    # Frozen exe (PyInstaller): the UI ships bundled next to the binary as
+    # dist/ — resolve relative to the exe, not the source file.
+    if getattr(sys, "frozen", False):
+        bundled = Path(sys.executable).parent / "dist" / "index.html"
+        if bundled.exists():
+            return bundled.as_uri()
+        data_dir = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+        bundled = data_dir / "dist" / "index.html"
+        if bundled.exists():
+            return bundled.as_uri()
     if DIST_INDEX.exists():
         return DIST_INDEX.as_uri()
     print(
@@ -120,7 +131,15 @@ def run(args: argparse.Namespace) -> int:
         except Exception:
             pass
 
+    tray = start_tray(
+        on_open=lambda: None,  # window already opening
+        on_quit=lambda: window.destroy(),
+    )
     webview.start(func=on_loaded, http_server=True)
+    try:
+        tray.stop()
+    except Exception:
+        pass
     return 0
 
 

@@ -1135,7 +1135,7 @@ export function useJarvis() {
     setBusy(true);
     setVoiceState("thinking");
     sttEngine
-      .transcribe(resampleTo16k(audio, sampleRate))
+      .transcribe(resampleTo16k(audio, sampleRate), 16000)
       .then((text) => {
         if (text) void process(text, "voice");
       })

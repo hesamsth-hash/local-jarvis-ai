@@ -56,9 +56,32 @@ default browser — the command never dead-ends.
       failing.
 - [x] Console auto-detects the Python backend (Tauri keeps priority; plain
       browser/PWA unaffected)
-- [ ] One-file `.exe` via PyInstaller
-- [ ] Optional tray icon / autostart
-- [ ] Optional sidecar: faster-whisper STT served on localhost
+- [x] **Autostart** — `set_autostart(true/false)` writes the Windows Run key
+      (HKCU, no admin needed); registers the exe when frozen, `pythonw main.py`
+      when run from source; non-Windows answers honestly
+- [x] **System tray** (`tray.py`) — optional pystray icon: Open / Quit.
+      Missing pystray+Pillow → simply no tray, shell runs fine
+- [x] **Sidecar** (`sidecar.py`) — localhost-only HTTP server:
+      faster-whisper STT (`/transcribe`) + optional kokoro-onnx TTS (`/tts`),
+      `/health` probe. The console auto-detects it and prefers it for
+      transcription, silently falling back to the in-browser Whisper engine
+- [x] **One-file `.exe`** — `JARVIS.spec` for PyInstaller, UI bundled, works
+      from the frozen exe without a Python install
+- [ ] Optional: tray settings menu, sidecar auto-launch from the shell
+
+## Sidecar (better voice recognition)
+
+```bash
+.venv\Scripts\pip install faster-whisper
+.venv\Scripts\python sidecar.py            # 127.0.0.1:8791, loads on first use
+.venv\Scripts\python sidecar.py --model small.en   # more accurate, slower
+```
+
+The console probes `http://127.0.0.1:8791/health` (cached 15 s) and sends
+mic audio there when present — faster-whisper is noticeably better than the
+in-browser Whisper WASM. Sidecar off? Nothing breaks: the built-in engine
+takes over silently. Optional TTS: `pip install kokoro-onnx onnxruntime` and
+place `kokoro-v1.0.onnx` + `voices-v1.0.bin` next to `sidecar.py`.
 
 ## Bridge extras
 
@@ -77,13 +100,9 @@ default browser — the command never dead-ends.
 ```bash
 .venv\Scripts\pip install pyinstaller
 bun run build
-.venv\Scripts\pyinstaller --name JARVIS --onefile --windowed ^
-  --add-data "../dist;dist" main.py
-# → desktop-python/dist/JARVIS.exe
+.venv\Scripts\pyinstaller JARVIS.spec
+# → desktop-python\dist\JARVIS.exe  (UI bundled, no Python needed on target)
 ```
-
-`main.py` already prefers the bundled `dist/` UI when it exists, so the exe
-is self-contained.
 
 ## Cancel-anytime story
 
