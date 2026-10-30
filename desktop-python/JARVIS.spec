@@ -7,13 +7,11 @@
 # Prereq: the web UI must be built first (bun run build at the repo root) —
 # it gets bundled as dist/ and main.py prefers it at runtime.
 
-import os
-
 block_cipher = None
 
 a = Analysis(
     ["main.py"],
-    pathex=[os.path.dirname(os.path.abspath(__file__))],
+    pathex=[SPECPATH],
     binaries=[],
     datas=[("../dist", "dist")],
     # bridge.py imports its extras lazily (__import__ by name), so PyInstaller
